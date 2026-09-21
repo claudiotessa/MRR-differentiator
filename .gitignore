@@ -1,0 +1,5 @@
+# build folder
+build/
+
+# if we wanted to ignore the include as well
+# include
