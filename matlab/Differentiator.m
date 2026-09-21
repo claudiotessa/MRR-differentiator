@@ -1,9 +1,9 @@
 close all
 clear all 
 
-N=1e5;
-tspan = [-10e-9 10e-9];
-t=linspace(min(tspan),max(tspan),N);
+N=1e5;                                // sample number
+tspan = [-10e-9 10e-9];               // span of time
+t=linspace(min(tspan),max(tspan),N);  // time istants
 
 
 %Banda del microring
