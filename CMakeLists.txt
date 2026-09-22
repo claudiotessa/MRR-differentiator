@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Python3 COMPONENTS Interpreter Development NumPy REQUIRED)
 
-add_executable(MRR MRR.cpp MRR.hpp)
+add_executable(MRR main.cpp MRR.cpp MRR.hpp)
 
 target_include_directories(MRR PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
