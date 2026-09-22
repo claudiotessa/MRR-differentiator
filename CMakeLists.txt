@@ -6,8 +6,20 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+find_package(Python3 COMPONENTS Interpreter Development NumPy REQUIRED)
+
 add_executable(MRR MRR.cpp MRR.hpp)
 
 target_include_directories(MRR PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${Python3_INCLUDE_DIRS}
+    ${Python3_NumPy_INCLUDE_DIRS}
 )
+
+target_link_libraries(MRR PRIVATE
+    Python3::Python
+    Python3::NumPy
+)
+
+# Python 3.14 ha deprecato le vecchie funzioni C-API
+target_compile_options(MRR PRIVATE -Wno-deprecated-declarations)

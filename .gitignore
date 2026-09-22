@@ -2,6 +2,7 @@
 build/
 
 .clangd
+.clang-format
 
 # if we wanted to ignore the include as well
 # include
