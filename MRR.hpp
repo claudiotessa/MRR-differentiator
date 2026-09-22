@@ -20,7 +20,7 @@ class MRR {
         double n_g = -1.0,
         double detuning = 0.0
         ): R(R), t(t), xi(xi), n_eff(n_eff), n_g(n_g > 0.0 ? n_g : n_eff),
-          detuning(detuning), L_r(2.0 * M_PI * R) { tau((n_g * L_r) / c) }
+          detuning(detuning), L_r(2.0 * M_PI * R) { tau = (this->n_g * L_r) / c; }
 
     /**
      * @brief Creates a first order differentiator in critical coupling.
