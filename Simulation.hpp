@@ -13,29 +13,6 @@
 class Simulation {
 
   public:
-    // --- Frequency domain ------------------------------------------------
-
-    /**
-     * @brief One figure: magnitude and phase of a ring against the ideal
-     *        n-th order differentiator, side by side.
-     * @param `m` the ring to draw.
-     * @param `n` order of the ideal differentiator to compare against.
-     * @param `B` bandwidth the ring was designed for [Hz]; the magnitudes are
-     *        normalised at B/2 and that edge is marked on the plot.
-     * @param `heading` first line of the figure title.
-     */
-    static void response(const MRR &m, double n, double B,
-                         const std::string &heading);
-
-    /// One figure: the first order ring (n = 1), magnitude and phase.
-    static void first_order_response(const MRR &m, double B);
-
-    /// One figure: the fractional order ring, magnitude and phase.
-    static void fractional_response(const MRR &m, double n, double B);
-
-
-    // --- Time domain -----------------------------------------------------
-
     /**
      * @brief The optical field launched into the ring.
      *
@@ -69,7 +46,8 @@ class Simulation {
         /// Hyperbolic-secant pulse of half-width `T0`.
         static Input sech(double T0);
 
-        /// Rectangular pulse of half-width `T0`, raised cosine edges of `T0`/20.
+        /// Rectangular pulse of half-width `T0`, raised cosine edges of
+        /// `T0`/20.
         static Input rectangular(double T0);
 
         /// Samples the field on the time axis `t` [s], peak normalised to 1.
@@ -79,6 +57,7 @@ class Simulation {
         std::string describe() const;
     };
 
+    // --- Time domain -----------------------------------------------------
     /**
      * @brief Everything the time-domain figures draw, computed once.
      *
@@ -86,52 +65,86 @@ class Simulation {
      * measured lag and whether it was removed.
      */
     struct Propagation {
-        Eigen::ArrayXd time_ns;         // time axis [ns]
-        Eigen::ArrayXd in_norm;         // input signal
-        Eigen::ArrayXd diff_real_norm;  // ideal derivative, real part
-        Eigen::ArrayXd ring_real_norm;  // ring output, real part
-        Eigen::ArrayXd ring_imag_norm;  // ring output, imaginary part
-        Eigen::ArrayXd power_diff;      // ideal derivative, |y|^2
-        Eigen::ArrayXd power_ring;      // ring output, |y|^2
-        long lag = 0;                   // ring delay [samples]
-        double lag_ps = 0.0;            // ring delay [ps]
-        double view_ns = 0.0;           // half-width of a sensible x range [ns]
-        std::string caption;            // lag, formatted for a subplot title
-        std::string ring_label;         // the ring's legend label
-        std::string input_label;        // the input's legend label
+        Eigen::ArrayXd time_ns;        // time axis [ns]
+        Eigen::ArrayXd in_norm;        // input signal
+        Eigen::ArrayXd diff_real_norm; // ideal derivative, real part
+        Eigen::ArrayXd ring_real_norm; // ring output, real part
+        Eigen::ArrayXd ring_imag_norm; // ring output, imaginary part
+        Eigen::ArrayXd power_diff;     // ideal derivative, |y|^2
+        Eigen::ArrayXd power_ring;     // ring output, |y|^2
+        long lag = 0;                  // ring delay [samples]
+        double lag_ps = 0.0;           // ring delay [ps]
+        double view_ns = 0.0;          // half-width of a sensible x range [ns]
+        std::string caption;           // lag, formatted for a subplot title
+        std::string ring_label;        // the ring's legend label
+        std::string input_label;       // the input's legend label
     };
 
     /**
-     * @brief Propagates `in` through the ring and through the ideal
-     *        differentiator. Draws nothing.
-     * @param `ring` the ring to propagate through.
-     * @param `in` the input pulse.
-     * @param `n` order of the differentiator the ring was built for.
-     * @param `align` when true the ideal waveform is slid onto the ring by the
-     *        measured lag, which answers "is the derivative the right shape?".
-     *        When false the waveforms are returned as computed, so the ring's
-     *        real latency stays visible. The lag is measured either way.
-     * @param `N` number of samples; the window is sized from the pulse.
+     * @brief Inizializza la simulazione legandola a un ring e ordine target.
      */
-    static Propagation propagate(const MRR &ring, const Input &in, double n,
-                                 bool align = true, long N = 100000);
+    Simulation(const MRR &ring, double n = 1, long N = 100000)
+        : ring(ring), n(n), N(N), has_result(false) {}
 
-    /// One figure: the input pulse.
-    static void input_signal(const Propagation &p);
+    void set_ring(const MRR &ring_) { ring = ring_; }
+    void set_order(double n_) { n = n_; }
+    void set_samples(long N_) { N = N_; }
 
-    /// One figure: ideal derivative vs the ring output, real and imaginary.
-    static void waveforms(const Propagation &p);
+    const MRR &get_ring() const { return ring; }
+    double get_order() const { return n; }
+    const Propagation &get_last_result() const { return last_propagation; }
 
-    /// One figure: optical power |y(t)|^2 of both.
-    static void optical_power(const Propagation &p);
+    /**
+     * @brief Propaga l'impulso attraverso l'anello ring e memorizza
+     *        il risultato internamente nello stato dell'oggetto.
+     */
+    const Propagation &propagate(const Input &in, bool align = true);
 
-    /// Blocking call that draws every figure built so far.
-    static void show();
+    // Plot immediati che utilizzano l'ultimo risultato propagato
+    void plot_input_signal() const;
+    void plot_waveforms() const;
+    void plot_optical_power() const;
 
-    // --- Signal helpers --------------------------------------------------
+    // Overload per plottare una struct Propagation specifica (se fornita
+    // dall'esterno)
+    void plot_input_signal(const Propagation &p) const;
+    void plot_waveforms(const Propagation &p) const;
+    void plot_optical_power(const Propagation &p) const;
+
+    // Utilizzano l'anello m_ring e l'ordine m_n salvati nell'oggetto
+    void response(double B, const std::string &heading = "") const;
+    void first_order_response(double B) const;
+    void fractional_response(double B) const;
+
+    // Overload che consentono di confrontare al volo un anello esterno
+    // differente
+    void response(const MRR &m, double n, double B,
+                  const std::string &heading = "") const;
+    void first_order_response(const MRR &m, double B) const;
+    void fractional_response(const MRR &m, double n, double B) const;
+
+    /// Mostra tutte le figure create finora
+    void show() const;
+
+  private:
+    MRR ring;
+    double n;
+    long N;
+    Propagation last_propagation;
+    bool has_result = false;
+
+    // --- Funzioni Ausiliarie Interne ---
+    void plot_ring_vs_ideal(const std::vector<double> &x,
+                            const std::vector<double> &ring,
+                            const std::vector<double> &ideal,
+                            const std::string &ring_label) const;
+
+    void finish_axes(const std::string &xlabel,
+                     const std::string &ylabel) const;
 
     template <typename Derived>
-    static std::vector<double> to_std_vec(const Eigen::ArrayBase<Derived> &arr) {
+    static std::vector<double>
+    to_std_vec(const Eigen::ArrayBase<Derived> &arr) {
         return std::vector<double>(arr.derived().data(),
                                    arr.derived().data() + arr.size());
     }
@@ -165,7 +178,8 @@ class Simulation {
     static Eigen::ArrayXd shift_samples(const Eigen::ArrayXd &arr, long k);
 
     /**
-     * @brief Magnitude in dB, normalised at the reference frequency `f_ref` [Hz].
+     * @brief Magnitude in dB, normalised at the reference frequency `f_ref`
+     * [Hz].
      *
      * Both the ring and the ideal response must be anchored at the same
      * frequency, and that frequency has to lie inside the differentiator band.
