@@ -9,21 +9,26 @@ MRR MRR::first_order(double B, double R, double n_eff) {
     double tau_c = 1.0 / (M_PI * B);
     double tau_n = tau_c / tau;
 
+    // Self coupling (diagonal of the coupler matrix), from the 3 dB corner of
+    // the linearised Eq. (1): pi*tau*B = (1 - r^2) / r^2.
     double r = std::sqrt(tau_n / (1.0 + tau_n));
-    double t = std::sqrt(1.0 - r*r);
-    double xi = t; // Critical coupling
+    double xi = r; // Critical coupling: xi = r
 
-    return MRR(R, t, xi, n_eff);
+    return MRR(R, r, xi, n_eff);
 }
 
 MRR MRR::fractional_order(double n, double R, double xi, double n_eff) {
 
-    // if n < 1 ok, else call a cascade of equal MRR
+    // K = tan(n*pi/2)^2 is symmetric about n = 1, so n and 2 - n are
+    // indistinguishable here: reject n > 1 and cascade rings instead.
+    if (!(n > 0.0 && n <= 1.0))
+        throw std::invalid_argument(
+            "fractional_order: n must be in (0,1]; cascade rings for n > 1");
 
     // Exact solution to Eq. (2)
     double K = std::pow(std::tan(n * M_PI / 2.0), 2);
 
-    // Quadratic in Y = t^2, from Eq. (2) with xi fixed: Aq*Y^2 + Bq*Y + Cq = 0
+    // Quadratic in Y = r^2, from Eq. (2) with xi fixed: Aq*Y^2 + Bq*Y + Cq = 0
     const double Aq = -xi * xi * (K + 1.0);
     const double Bq = K * std::pow(xi, 4) + K + 2.0 * xi * xi;
     const double Cq = Aq;    
@@ -34,12 +39,12 @@ MRR MRR::fractional_order(double n, double R, double xi, double n_eff) {
         throw std::runtime_error("fractional_order: no real solution for t (discriminant < 0)");
     }
 
-    // first root is the physical one (t in [xi,1]);
-    // second root gives t > 1 (unphysical);
+    // Cq == Aq, so the two roots are Y and 1/Y: the first is the physical one
+    // (r in [xi,1], i.e. under-coupled), the second gives r > 1 (unphysical).
     const double Y = (-Bq + std::sqrt(discriminant)) / (2.0 * Aq);
     if (Y < xi * xi || Y > 1.0)
-        throw std::runtime_error("fractional_order: computed t^2 outside valid domain [xi^2, 1]");
+        throw std::runtime_error("fractional_order: computed r^2 outside valid domain [xi^2, 1]");
 
-    const double t = std::sqrt(Y);
-    return MRR(R, t, xi, n_eff);
+    const double r = std::sqrt(Y);
+    return MRR(R, r, xi, n_eff);
 }

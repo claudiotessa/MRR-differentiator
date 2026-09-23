@@ -13,29 +13,36 @@ class MRR {
 
   public:
 
+    /**
+     * @brief Coupler convention: the transmission matrix of the bus/ring
+     *        coupler is [[r, -j*t], [-j*t, r]], so `r` is the diagonal
+     *        (self-coupling, the residual) and `t` is the cross-coupling.
+     *        Note `r` (lowercase) is unrelated to `R`, the ring radius.
+     *        They satisfy r^2 + t^2 = 1 for a lossless coupler.
+     */
     MRR(double R,
-        double t,
+        double r,
         double xi,
         double n_eff,
         double n_g = -1.0,
         double detuning = 0.0
-        ): R(R), t(t), xi(xi), n_eff(n_eff), n_g(n_g > 0.0 ? n_g : n_eff),
+        ): R(R), r(r), xi(xi), n_eff(n_eff), n_g(n_g > 0.0 ? n_g : n_eff),
           detuning(detuning), L_r(2.0 * M_PI * R) { tau = (this->n_g * L_r) / c; }
 
     /**
      * @brief Creates a first order differentiator in critical coupling.
-     * @param `B` the desired 3db bandwidth [Hz]. FWHD
+     * @param `B` the desired 3 dB bandwidth of the differentiator [Hz].
      * @param `R` radius of the MRR [m].
-     * @param `n_eff` effective refractive index.
+     * @param `n_eff` effective refractive index (also used as group index).
      */
     static MRR first_order(double B, double R, double n_eff);
 
     /**
-     * @brief Creates a fractional order differentiator in critical coupling.
-     * @param `n` the order of the differentiator 0 < n < 1
+     * @brief Creates a fractional order differentiator, under-coupled (r > xi).
+     * @param `n` the order of the differentiator, 0 < n <= 1.
      * @param `R` radius of the MRR [m].
-     * @param `t` amplitude transmission coefficient.
-     * @param `n_eff` effective refractive index.
+     * @param `xi` single-pass amplitude transmission (round-trip loss).
+     * @param `n_eff` effective refractive index (also used as group index).
      */
     static MRR fractional_order(double n, double R, double xi, double n_eff);
 
@@ -49,7 +56,7 @@ class MRR {
         Eigen::ArrayXcd exp_neg_j_theta = (-1.0i * theta).exp();
 
         // Eq. (1) of the paper: through-port response
-        return (t - xi * exp_neg_j_theta) / (1.0 - t * xi * exp_neg_j_theta);
+        return (r - xi * exp_neg_j_theta) / (1.0 - r * xi * exp_neg_j_theta);
     }
 
     /**
@@ -64,7 +71,8 @@ class MRR {
     // --- Parameter accessors -------------------------------------------
     double radius() const { return R; }          // [m]
     double length() const { return L_r; }        // circumference [m]
-    double self_coupling() const { return t; }
+    double self_coupling() const { return r; }          // diagonal, `r`
+    double cross_coupling() const { return std::sqrt(1.0 - r * r); } // `-jt`
     double round_trip_loss() const { return xi; }
     double group_index() const { return n_g; }
     double round_trip_time() const { return tau; }   // [s]
@@ -72,17 +80,17 @@ class MRR {
 
     /// Finesse = FSR / FWHM, from the Airy linewidth of Eq. (1).
     double finesse() const {
-        return M_PI * std::sqrt(t * xi) / (1.0 - t * xi);
+        return M_PI * std::sqrt(r * xi) / (1.0 - r * xi);
     }
 
     /// 3 dB linewidth of the resonance [Hz].
     double fwhm() const { return fsr() / finesse(); }
 
   private:
-    double R;   // Radius
+    double R;   // Radius [m] (NOT the coupler `r` below)
     double L_r; // Length (circumference)
-    double t;   // self coupling
-    double xi;  // ring loss
+    double r;   // self coupling: diagonal of the coupler matrix
+    double xi;  // ring loss (single-pass amplitude transmission)
     double n_eff; // effective index of the waveguide mode
     double n_g;   // group index of the waveguide mode
     double detuning;
