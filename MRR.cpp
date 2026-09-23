@@ -12,7 +12,7 @@ MRR MRR::first_order(double B, double R, double n_eff) {
     double r = std::sqrt(tau_n / (1.0 + tau_n));
     double t = std::sqrt(1.0 - r*r);
     double xi = t; // Critical coupling
-                   //
+
     return MRR(R, t, xi, n_eff);
 }
 

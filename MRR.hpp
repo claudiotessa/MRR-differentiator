@@ -48,14 +48,40 @@ class MRR {
             (2.0 * M_PI * tau * Df.derived()).template cast<Complex>();
         Eigen::ArrayXcd exp_neg_j_theta = (-1.0i * theta).exp();
 
-        // Equazione 1 del paper: Risposta della porta through
+        // Eq. (1) of the paper: through-port response
         return (t - xi * exp_neg_j_theta) / (1.0 - t * xi * exp_neg_j_theta);
     }
+
+    /**
+     * @brief Phase of the through-port response, wrapped in (-pi, pi].
+     * @param `Df` frequency detuning from resonance [Hz].
+     */
+    template <typename Derived>
+    Eigen::ArrayXd compute_phase(const Eigen::ArrayBase<Derived> &Df) const {
+        return compute_H(Df).arg();
+    }
+
+    // --- Parameter accessors -------------------------------------------
+    double radius() const { return R; }          // [m]
+    double length() const { return L_r; }        // circumference [m]
+    double self_coupling() const { return t; }
+    double round_trip_loss() const { return xi; }
+    double group_index() const { return n_g; }
+    double round_trip_time() const { return tau; }   // [s]
+    double fsr() const { return 1.0 / tau; }         // [Hz]
+
+    /// Finesse = FSR / FWHM, from the Airy linewidth of Eq. (1).
+    double finesse() const {
+        return M_PI * std::sqrt(t * xi) / (1.0 - t * xi);
+    }
+
+    /// 3 dB linewidth of the resonance [Hz].
+    double fwhm() const { return fsr() / finesse(); }
 
   private:
     double R;   // Radius
     double L_r; // Length (circumference)
-    double t;   // slef coupling
+    double t;   // self coupling
     double xi;  // ring loss
     double n_eff; // effective index of the waveguide mode
     double n_g;   // group index of the waveguide mode

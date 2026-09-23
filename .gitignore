@@ -6,5 +6,7 @@ build/
 
 compile_commands.json
 
+docs/
+
 # if we wanted to ignore the include as well
 # include
