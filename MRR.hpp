@@ -2,6 +2,7 @@
 #define MRR_HPP
 
 #include <Eigen/Dense>
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <stdexcept>
@@ -25,8 +26,9 @@ class MRR {
         double n_eff,
         double n_g = -1.0,
         double detuning = 0.0
-        ): R(R), r(r), xi(xi), n_eff(n_eff), n_g(n_g > 0.0 ? n_g : n_eff),
-          detuning(detuning), L_r(2.0 * M_PI * R) { tau = (this->n_g * L_r) / c; }
+        ): R(R), L_r(2.0 * M_PI * R), r(r), xi(xi), n_eff(n_eff),
+           n_g(n_g > 0.0 ? n_g : n_eff), detuning(detuning),
+           tau((n_g > 0.0 ? n_g : n_eff) * (2.0 * M_PI * R) / c) {}
 
     /**
      * @brief Creates a first order differentiator in critical coupling.
@@ -82,8 +84,17 @@ class MRR {
         return M_PI * std::sqrt(r * xi) / (1.0 - r * xi);
     }
 
-    /// 3 dB linewidth of the resonance [Hz].
+    /// 3 dB linewidth of the resonance [Hz], from the Airy lineshape.
     double fwhm() const { return fsr() / finesse(); }
+
+    /**
+     * @brief Width of the phase transition at resonance [Hz], Eq. (4).
+     * This is the differentiator's usable band.
+     */
+    double transition_width() const {
+        const double a = xi * (1.0 + r * r) / (r * (1.0 + xi * xi));
+        return std::acos(std::clamp(a, -1.0, 1.0)) / (tau * M_PI);
+    }
 
     // --- Formatting ----------------------------------------------------
 

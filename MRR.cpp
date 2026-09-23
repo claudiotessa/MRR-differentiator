@@ -32,12 +32,12 @@ MRR MRR::fractional_order(double n, double R, double xi, double n_eff) {
     // Quadratic in Y = r^2, from Eq. (2) with xi fixed: Aq*Y^2 + Bq*Y + Cq = 0
     const double Aq = -xi * xi * (K + 1.0);
     const double Bq = K * std::pow(xi, 4) + K + 2.0 * xi * xi;
-    const double Cq = Aq;    
+    const double Cq = Aq;
 
     const double discriminant = Bq * Bq - 4.0 * Aq * Cq;
 
     if (discriminant < 0.0) {
-        throw std::runtime_error("fractional_order: no real solution for t (discriminant < 0)");
+        throw std::runtime_error("fractional_order: no real solution for r (discriminant < 0)");
     }
 
     // Cq == Aq, so the two roots are Y and 1/Y: the first is the physical one
@@ -54,9 +54,11 @@ std::string MRR::params_string() const {
     char buf[256];
     std::snprintf(buf, sizeof(buf),
         "R = %.0f um, n_g = %.2f, tau = %.2f ps, FSR = %.1f GHz\n"
-        "r = %.4f, xi = %.4f, finesse = %.1f, FWHM = %.2f GHz",
+        "r = %.4f, xi = %.4f, finesse = %.1f, linewidth = %.2f GHz, "
+        "dv = %.3f GHz",
         radius() * 1e6, group_index(), round_trip_time() * 1e12, fsr() / 1e9,
-        self_coupling(), round_trip_loss(), finesse(), fwhm() / 1e9);
+        self_coupling(), round_trip_loss(), finesse(), fwhm() / 1e9,
+        transition_width() / 1e9);
     return std::string(buf);
 }
 

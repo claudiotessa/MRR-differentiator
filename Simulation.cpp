@@ -72,10 +72,93 @@ ArrayXd Simulation::to_dB(const ArrayXd &mag, const ArrayXd &freq_hz,
                           double f_ref) {
     Eigen::Index i;
     ((freq_hz.abs() - f_ref).abs()).minCoeff(&i);
-    return 20.0 * (mag / mag(i)).log10();
+    // A reference bin sitting on a null would send the whole curve to -inf.
+    const double ref = (mag(i) > 1e-300) ? mag(i) : mag.maxCoeff();
+    return 20.0 * (mag / ref).log10();
 }
 
 void Simulation::show() { plt::show(); }
+
+// =========================================================================
+// INPUT PULSES
+// =========================================================================
+
+Simulation::Input Simulation::Input::gaussian(double T0) {
+    Input in;
+    in.shape = Gaussian;
+    in.T0 = T0;
+    return in;
+}
+
+Simulation::Input Simulation::Input::gaussian_matched(const MRR &ring,
+                                                      double ratio) {
+    // exp(-(t/T0)^2) transforms to exp(-(pi*f*T0)^2), whose amplitude FWHM is
+    // 2*sqrt(ln2)/(pi*T0). Solve that for the wanted fraction of Eq. (4).
+    const double want = ratio * ring.transition_width();
+    return gaussian(2.0 * std::sqrt(std::log(2.0)) / (M_PI * want));
+}
+
+Simulation::Input Simulation::Input::super_gaussian(double T0, int m) {
+    Input in;
+    in.shape = SuperGaussian;
+    in.T0 = T0;
+    in.m = m;
+    return in;
+}
+
+Simulation::Input Simulation::Input::sech(double T0) {
+    Input in;
+    in.shape = Sech;
+    in.T0 = T0;
+    return in;
+}
+
+Simulation::Input Simulation::Input::rectangular(double T0) {
+    Input in;
+    in.shape = Rectangular;
+    in.T0 = T0;
+    return in;
+}
+
+ArrayXd Simulation::Input::sample(const ArrayXd &t) const {
+    const ArrayXd u = t / T0;
+    switch (shape) {
+    case Gaussian:
+        return (-u.square()).exp();
+    case SuperGaussian:
+        return (-u.abs().pow(2 * m)).exp();
+    case Sech:
+        return 1.0 / u.cosh();
+    case Rectangular: {
+        // A true step has infinite bandwidth and would alias on any grid, so
+        // the edges are raised cosines one twentieth of the pulse wide.
+        const double w = 0.05;
+        ArrayXd e = ((u.abs() - 1.0) / w).min(1.0).max(-1.0);
+        return 0.5 * (1.0 - (M_PI * e / 2.0).sin());
+    }
+    }
+    return ArrayXd::Zero(t.size());
+}
+
+std::string Simulation::Input::describe() const {
+    char buf[96];
+    switch (shape) {
+    case Gaussian:
+        std::snprintf(buf, sizeof(buf), "Gaussian, T0 = %.3g ns", T0 * 1e9);
+        break;
+    case SuperGaussian:
+        std::snprintf(buf, sizeof(buf), "super-Gaussian (order %d), T0 = %.3g ns",
+            2 * m, T0 * 1e9);
+        break;
+    case Sech:
+        std::snprintf(buf, sizeof(buf), "sech, T0 = %.3g ns", T0 * 1e9);
+        break;
+    case Rectangular:
+        std::snprintf(buf, sizeof(buf), "rectangular, T0 = %.3g ns", T0 * 1e9);
+        break;
+    }
+    return std::string(buf);
+}
 
 // =========================================================================
 // FREQUENCY DOMAIN
@@ -85,9 +168,7 @@ void Simulation::response(const MRR &m, double n, double B,
                           const std::string &heading) {
     // Frequency grid from -20 GHz to +20 GHz
     const long N = 10000;
-    ArrayXcd Df =
-        ArrayXd::LinSpaced(N, -20e9, 20e9).cast<std::complex<double>>();
-    ArrayXd freq_hz = Df.real();
+    ArrayXd freq_hz = ArrayXd::LinSpaced(N, -20e9, 20e9);
     std::vector<double> freq_ghz = to_std_vec((freq_hz / 1e9).eval());
 
     // The curves are normalised at B/2, the edge of the band the ring is
@@ -95,9 +176,9 @@ void Simulation::response(const MRR &m, double n, double B,
     const double f_ref = B / 2.0;
 
     // --- Ring ---
-    ArrayXcd H_ring = m.compute_H(Df);
+    ArrayXcd H_ring = m.compute_H(freq_hz);
     ArrayXd ring_dB = to_dB(H_ring.abs(), freq_hz, f_ref);
-    ArrayXd ring_phase = m.compute_phase(Df) / M_PI;
+    ArrayXd ring_phase = m.compute_phase(freq_hz) / M_PI;
 
     // --- Ideal n-th order derivative, (j*2*pi*f)^n ---
     ArrayXd ideal_abs = (2.0 * M_PI * freq_hz).abs().pow(n);
@@ -148,11 +229,15 @@ void Simulation::fractional_response(const MRR &m, double n, double B) {
 // TIME DOMAIN
 // =========================================================================
 
-Simulation::Propagation Simulation::propagate(const MRR &ring, double n,
-                                              bool align) {
+Simulation::Propagation Simulation::propagate(const MRR &ring, const Input &in,
+                                              double n, bool align, long N) {
     // --- Time axis and matching FFT frequency grid ---
-    const long N = 100000;
-    ArrayXd time = ArrayXd::LinSpaced(N, -10e-9, 10e-9); // -10 ns to +10 ns
+    // The window has to hold the ring's ringdown, tau/(1 - r*xi), as well as
+    // the pulse, or the tail wraps around and corrupts the comparison.
+    const double ringdown = ring.round_trip_time() /
+                            (1.0 - ring.self_coupling() * ring.round_trip_loss());
+    const double window = std::max(10.0 * in.T0, 40.0 * ringdown);
+    ArrayXd time = ArrayXd::LinSpaced(N, -window, window);
     const double dt = time(1) - time(0);
 
     // Frequency axis centred on 0. The bin spacing must be exactly 1/(N*dt) to
@@ -165,17 +250,17 @@ Simulation::Propagation Simulation::propagate(const MRR &ring, double n,
             (static_cast<double>(N) * dt))
             .cast<std::complex<double>>();
 
-    // --- Input signal: 12th-order super-Gaussian, T0 = 1 ns ---
-    const double A = 1e10;
-    ArrayXd E_in = (-((0.1 * A * time).pow(12))).exp();
+    // --- Input signal ---
+    ArrayXd E_in = in.sample(time);
 
-    std::cout << "--- Fractional MRR configuration ---\n"
-              << "order n: " << n << '\n'
-              << "r:       " << ring.self_coupling() << '\n'
-              << "t:       " << ring.cross_coupling() << '\n'
-              << "xi:      " << ring.round_trip_loss() << '\n'
-              << "tau:     " << ring.round_trip_time() * 1e12 << " ps"
-              << std::endl;
+    std::cout << "--- MRR configuration ---\n"
+              << "order n:  " << n << '\n'
+              << "r:        " << ring.self_coupling() << '\n'
+              << "t:        " << ring.cross_coupling() << '\n'
+              << "xi:       " << ring.round_trip_loss() << '\n'
+              << "tau:      " << ring.round_trip_time() * 1e12 << " ps\n"
+              << "dv (Eq4): " << ring.transition_width() / 1e9 << " GHz\n"
+              << "input:    " << in.describe() << std::endl;
 
     // --- Frequency responses: physical ring vs ideal fractional derivative ---
     ArrayXcd H_through = ring.compute_H(Df);
@@ -207,6 +292,8 @@ Simulation::Propagation Simulation::propagate(const MRR &ring, double n,
 
     Propagation p;
     p.ring_label = ring.label();
+    p.input_label = in.describe();
+    p.view_ns = 2.5 * in.T0 * 1e9;
 
     // Optical power |y(t)|^2
     p.power_ring = out_ring_t.array().abs2();
@@ -261,10 +348,10 @@ Simulation::Propagation Simulation::propagate(const MRR &ring, double n,
 
 void Simulation::input_signal(const Propagation &p) {
     plt::figure_size(900, 380);
-    plt::title("Input signal, " + p.ring_label);
+    plt::title("Input signal - " + p.input_label);
     plt::plot(to_std_vec(p.time_ns), to_std_vec(p.in_norm),
         {{"color", "black"}, {"linewidth", "2"}, {"label", "input"}});
-    plt::xlim(-2.5, 2.5);
+    plt::xlim(-p.view_ns, p.view_ns);
     finish_axes("Time [ns]", "Input signal x(t)");
     plt::tight_layout();
 }
@@ -281,7 +368,7 @@ void Simulation::waveforms(const Propagation &p) {
     plt::plot(to_std_vec(p.time_ns), to_std_vec(p.ring_imag_norm),
         {{"color", "red"}, {"linestyle", "--"}, {"linewidth", "2"},
         {"label", "MRR output (imag)"}});
-    plt::xlim(-2.5, 2.5);
+    plt::xlim(-p.view_ns, p.view_ns);
     finish_axes("Time [ns]", "Derivative y(t)");
     plt::tight_layout();
 }
@@ -295,7 +382,7 @@ void Simulation::optical_power(const Propagation &p) {
     plt::plot(to_std_vec(p.time_ns), to_std_vec(p.power_ring),
         {{"color", "red"}, {"linewidth", "2"},
         {"label", "MRR output (power)"}});
-    plt::xlim(-2.5, 2.5);
+    plt::xlim(-p.view_ns, p.view_ns);
     finish_axes("Time [ns]", "|y(t)|^2");
     plt::tight_layout();
 }

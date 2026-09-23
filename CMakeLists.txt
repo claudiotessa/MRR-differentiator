@@ -22,4 +22,4 @@ target_link_libraries(MRR PRIVATE
 )
 
 # Python 3.14 ha deprecato le vecchie funzioni C-API
-target_compile_options(MRR PRIVATE -Wno-deprecated-declarations)
+target_compile_options(MRR PRIVATE -Wall -Wextra -Wno-deprecated-declarations)

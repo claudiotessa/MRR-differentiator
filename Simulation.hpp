@@ -9,11 +9,6 @@
 
 /**
  * @brief Numerical experiments on a ring: propagation, alignment and figures.
- *
- * The rings themselves are built by the caller and passed in, so this class
- * owns no physics: it only propagates a signal, aligns it and draws. Every
- * public drawing function opens exactly one figure and draws exactly one
- * comparison, so the caller picks which ones to look at.
  */
 class Simulation {
 
@@ -42,6 +37,49 @@ class Simulation {
     // --- Time domain -----------------------------------------------------
 
     /**
+     * @brief The optical field launched into the ring.
+     *
+     * Measured against the paper's error metric, the same ring scores ~5% on
+     * the paper's Gaussian and ~40% on a 12th-order super-Gaussian.
+     */
+    struct Input {
+        enum Shape {
+            Gaussian,      // exp(-(t/T0)^2), what the paper uses
+            SuperGaussian, // exp(-(t/T0)^(2m)), flat-topped
+            Sech,          // sech(t/T0), the soliton pulse
+            Rectangular    // hard-edged, worst case for a narrow-band ring
+        };
+
+        Shape shape = Gaussian;
+        double T0 = 1e-12; // half-width [s]
+        int m = 6;         // super-Gaussian half-order, only used by that shape
+
+        /// The paper's input: a Gaussian of half-width `T0`.
+        static Input gaussian(double T0);
+
+        /**
+         * @brief A Gaussian whose spectrum sits at `ratio` times the ring's
+         *        Eq. (4) width - the knob the paper's design rule turns.
+         */
+        static Input gaussian_matched(const MRR &ring, double ratio = 2.17);
+
+        /// Flat-topped pulse of half-width `T0` and order 2*`m`.
+        static Input super_gaussian(double T0, int m = 6);
+
+        /// Hyperbolic-secant pulse of half-width `T0`.
+        static Input sech(double T0);
+
+        /// Rectangular pulse of half-width `T0`, raised cosine edges of `T0`/20.
+        static Input rectangular(double T0);
+
+        /// Samples the field on the time axis `t` [s], peak normalised to 1.
+        Eigen::ArrayXd sample(const Eigen::ArrayXd &t) const;
+
+        /// Short description for a plot legend.
+        std::string describe() const;
+    };
+
+    /**
      * @brief Everything the time-domain figures draw, computed once.
      *
      * The waveforms are already normalised for plotting; `caption` states the
@@ -57,21 +95,26 @@ class Simulation {
         Eigen::ArrayXd power_ring;      // ring output, |y|^2
         long lag = 0;                   // ring delay [samples]
         double lag_ps = 0.0;            // ring delay [ps]
+        double view_ns = 0.0;           // half-width of a sensible x range [ns]
         std::string caption;            // lag, formatted for a subplot title
         std::string ring_label;         // the ring's legend label
+        std::string input_label;        // the input's legend label
     };
 
     /**
-     * @brief Propagates a 12th-order super-Gaussian pulse through the ring and
-     *        through the ideal differentiator. Draws nothing.
+     * @brief Propagates `in` through the ring and through the ideal
+     *        differentiator. Draws nothing.
      * @param `ring` the ring to propagate through.
+     * @param `in` the input pulse.
      * @param `n` order of the differentiator the ring was built for.
      * @param `align` when true the ideal waveform is slid onto the ring by the
      *        measured lag, which answers "is the derivative the right shape?".
      *        When false the waveforms are returned as computed, so the ring's
      *        real latency stays visible. The lag is measured either way.
+     * @param `N` number of samples; the window is sized from the pulse.
      */
-    static Propagation propagate(const MRR &ring, double n, bool align = true);
+    static Propagation propagate(const MRR &ring, const Input &in, double n,
+                                 bool align = true, long N = 100000);
 
     /// One figure: the input pulse.
     static void input_signal(const Propagation &p);
