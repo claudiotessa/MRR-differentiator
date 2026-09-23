@@ -83,13 +83,10 @@ class Simulation {
     /**
      * @brief Inizializza la simulazione legandola a un ring e ordine target.
      */
-    Simulation(const MRR &ring, double n = 1, long N = 100000)
+    Simulation(const MRR &ring, double n, long N = 100000)
         : ring(ring), n(n), N(N), has_result(false) {}
 
-    void set_ring(const MRR &ring_) { ring = ring_; }
-    void set_order(double n_) { n = n_; }
-    void set_samples(long N_) { N = N_; }
-
+    // Getters
     const MRR &get_ring() const { return ring; }
     double get_order() const { return n; }
     const Propagation &get_last_result() const { return last_propagation; }
@@ -98,32 +95,14 @@ class Simulation {
      * @brief Propaga l'impulso attraverso l'anello ring e memorizza
      *        il risultato internamente nello stato dell'oggetto.
      */
-    const Propagation &propagate(const Input &in, bool align = true);
+    const Propagation &run(const Input &in, bool align = true);
 
     // Plot immediati che utilizzano l'ultimo risultato propagato
     void plot_input_signal() const;
-    void plot_waveforms() const;
-    void plot_optical_power() const;
+    void plot_time_domain() const;
+    void plot_frequency_response() const;
 
-    // Overload per plottare una struct Propagation specifica (se fornita
-    // dall'esterno)
-    void plot_input_signal(const Propagation &p) const;
-    void plot_waveforms(const Propagation &p) const;
-    void plot_optical_power(const Propagation &p) const;
-
-    // Utilizzano l'anello m_ring e l'ordine m_n salvati nell'oggetto
-    void response(double B, const std::string &heading = "") const;
-    void first_order_response(double B) const;
-    void fractional_response(double B) const;
-
-    // Overload che consentono di confrontare al volo un anello esterno
-    // differente
-    void response(const MRR &m, double n, double B,
-                  const std::string &heading = "") const;
-    void first_order_response(const MRR &m, double B) const;
-    void fractional_response(const MRR &m, double n, double B) const;
-
-    /// Mostra tutte le figure create finora
+    // Mostra tutte le figure create finora
     void show() const;
 
   private:

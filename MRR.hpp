@@ -14,21 +14,16 @@ class MRR {
     static constexpr double c = 2.99792458e8; // lightspeed
 
   public:
-
     /**
      * @brief Coupler convention: the transmission matrix of the bus/ring
      *        coupler is [[r, -j*t], [-j*t, r]], so `r` is the diagonal
      *        (self-coupling, the residual) and `t` is the cross-coupling.
      */
-    MRR(double R,
-        double r,
-        double xi,
-        double n_eff,
-        double n_g = -1.0,
-        double detuning = 0.0
-        ): R(R), L_r(2.0 * M_PI * R), r(r), xi(xi), n_eff(n_eff),
-           n_g(n_g > 0.0 ? n_g : n_eff), detuning(detuning),
-           tau((n_g > 0.0 ? n_g : n_eff) * (2.0 * M_PI * R) / c) {}
+    MRR(double R, double r, double xi, double n_eff, double n_g = -1.0,
+        double detuning = 0.0)
+        : R(R), L_r(2.0 * M_PI * R), r(r), xi(xi), n_eff(n_eff),
+          n_g(n_g > 0.0 ? n_g : n_eff), detuning(detuning),
+          tau((n_g > 0.0 ? n_g : n_eff) * (2.0 * M_PI * R) / c) {}
 
     /**
      * @brief Creates a first order differentiator in critical coupling.
@@ -70,19 +65,19 @@ class MRR {
     }
 
     // --- Parameter accessors -------------------------------------------
-    double radius() const { return R; }          // [m]
-    double length() const { return L_r; }        // circumference [m]
-    double self_coupling() const { return r; }          // diagonal, `r`
-    double cross_coupling() const { return std::sqrt(1.0 - r * r); } //antidiagonal, `-jt`
+    double radius() const { return R; }        // [m]
+    double length() const { return L_r; }      // circumference [m]
+    double self_coupling() const { return r; } // diagonal, `r`
+    double cross_coupling() const {
+        return std::sqrt(1.0 - r * r);
+    } // antidiagonal, `-jt`
     double round_trip_loss() const { return xi; }
     double group_index() const { return n_g; }
-    double round_trip_time() const { return tau; }   // [s]
-    double fsr() const { return 1.0 / tau; }         // [Hz]
+    double round_trip_time() const { return tau; } // [s]
+    double fsr() const { return 1.0 / tau; }       // [Hz]
 
     /// Finesse = FSR / FWHM, from the Airy linewidth of Eq. (1).
-    double finesse() const {
-        return M_PI * std::sqrt(r * xi) / (1.0 - r * xi);
-    }
+    double finesse() const { return M_PI * std::sqrt(r * xi) / (1.0 - r * xi); }
 
     /// 3 dB linewidth of the resonance [Hz], from the Airy lineshape.
     double fwhm() const { return fsr() / finesse(); }
@@ -105,10 +100,10 @@ class MRR {
     std::string label() const;
 
   private:
-    double R;   // Radius [m]
-    double L_r; // Length (circumference)
-    double r;   // self coupling: diagonal of the coupler matrix
-    double xi;  // ring loss (single-pass amplitude transmission)
+    double R;     // Radius [m]
+    double L_r;   // Length (circumference)
+    double r;     // self coupling: diagonal of the coupler matrix
+    double xi;    // ring loss (single-pass amplitude transmission)
     double n_eff; // effective index of the waveguide mode
     double n_g;   // group index of the waveguide mode
     double detuning;

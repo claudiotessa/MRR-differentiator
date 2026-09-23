@@ -11,6 +11,10 @@
 namespace plt = matplotlibcpp;
 using namespace Eigen;
 
+// =========================================================================
+// AUSILIARI GRAFICI INTERNI
+// =========================================================================
+
 // The ring is always the thick red line, the ideal the dashed blue one.
 void Simulation::plot_ring_vs_ideal(const std::vector<double> &x,
                                     const std::vector<double> &ring,
@@ -33,6 +37,8 @@ void Simulation::finish_axes(const std::string &xlabel,
     plt::grid(true);
     plt::legend();
 }
+
+void Simulation::show() const { plt::show(); }
 
 // =========================================================================
 // SIGNAL HELPERS
@@ -74,8 +80,6 @@ ArrayXd Simulation::to_dB(const ArrayXd &mag, const ArrayXd &freq_hz,
     const double ref = (mag(i) > 1e-300) ? mag(i) : mag.maxCoeff();
     return 20.0 * (mag / ref).log10();
 }
-
-void Simulation::show() const { plt::show(); }
 
 // =========================================================================
 // INPUT PULSES
@@ -160,90 +164,10 @@ std::string Simulation::Input::describe() const {
 }
 
 // =========================================================================
-// FREQUENCY DOMAIN
+// PROPAGAZIONE TEMPORALE (TIME DOMAIN COMPUTATION)
 // =========================================================================
 
-void Simulation::response(const MRR &m, double n, double B,
-                          const std::string &heading) const {
-    // 1. Il riferimento deve essere il bordo della banda del differenziatore
-    // (B/2)
-    const double f_ref = B / 2.0;
-
-    // 2. Griglia ad alta risoluzione: copriamo un intervallo centrato sul
-    // notch. Se B è piccolo (es. 0.42 GHz), mostrare da -20 a +20 GHz è troppo
-    // ampio. Estendiamo la griglia a circa 3 o 4 volte la banda per apprezzare
-    // la saturazione.
-    const double span_hz = std::max(2.0e9, 4.0 * B);
-    ArrayXd freq_hz = ArrayXd::LinSpaced(N, -span_hz, span_hz);
-    std::vector<double> freq_ghz = to_std_vec((freq_hz / 1e9).eval());
-
-    // --- MRR ---
-    ArrayXcd H_ring = m.compute_H(freq_hz);
-    ArrayXd ring_dB = to_dB(H_ring.abs(), freq_hz, f_ref);
-    ArrayXd ring_phase = m.compute_phase(freq_hz) / M_PI;
-
-    // --- Derivata ideale n-esima, (j*2*pi*f)^n ---
-    ArrayXd ideal_abs = (2.0 * M_PI * freq_hz).abs().pow(n);
-    ArrayXd ideal_dB = to_dB(ideal_abs, freq_hz, f_ref);
-    ArrayXd ideal_phase = freq_hz.sign() * (n / 2.0);
-
-    char title[192];
-    plt::figure_size(1100, 480);
-
-    // --- Modulo ---
-    plt::subplot(1, 2, 1);
-    plt::title(heading + "\n" + m.params_string());
-    plot_ring_vs_ideal(freq_ghz, to_std_vec(ring_dB), to_std_vec(ideal_dB),
-                       m.label());
-
-    // Linee verticali che delimitano la banda utile [-B/2, +B/2]
-    plt::axvline(f_ref / 1e9, 0.0, 1.0,
-                 {{"color", "gray"}, {"linestyle", ":"}});
-    plt::axvline(-f_ref / 1e9, 0.0, 1.0,
-                 {{"color", "gray"}, {"linestyle", ":"}});
-
-    // Finestra di visualizzazione proporzionata alla banda del differenziatore
-    const double view_ghz = (2.5 * B) / 1e9;
-    plt::xlim(-view_ghz, view_ghz);
-    plt::ylim(-25.0, 5.0);
-    finish_axes("Frequency [GHz]", "Magnitude [dB]");
-
-    // --- Fase ---
-    std::snprintf(title, sizeof(title), "Phase (ideal = +/- %.2f pi)", n / 2.0);
-    plt::subplot(1, 2, 2);
-    plt::title(std::string(title));
-    plot_ring_vs_ideal(freq_ghz, to_std_vec(ring_phase),
-                       to_std_vec(ideal_phase), m.label());
-
-    plt::xlim(-view_ghz, view_ghz);
-    plt::ylim(-1.0, 1.0);
-    finish_axes("Frequency [GHz]", "Phase [rad / pi]");
-
-    plt::tight_layout();
-}
-
-void Simulation::first_order_response(const MRR &m, double B) const {
-    char heading[96];
-    std::snprintf(heading, sizeof(heading),
-                  "First order (n = 1, target B = %.1f GHz)", B / 1e9);
-    response(m, 1.0, B, std::string(heading));
-}
-
-void Simulation::fractional_response(const MRR &m, double n, double B) const {
-    char heading[96];
-    std::snprintf(heading, sizeof(heading), "Fractional order (n = %.2f)", n);
-    response(m, n, B, std::string(heading));
-}
-
-// =========================================================================
-// TIME DOMAIN
-// =========================================================================
-
-const Simulation::Propagation &Simulation::propagate(const Input &in,
-                                                     bool align) {
-    // --- Time axis and matching FFT frequency grid ---
-    // The window has to hold the ring's ringdown, tau/(1 - r*xi), as well as
-    // the pulse, or the tail wraps around and corrupts the comparison.
+const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
     const double ringdown =
         ring.round_trip_time() /
         (1.0 - ring.self_coupling() * ring.round_trip_loss());
@@ -251,17 +175,12 @@ const Simulation::Propagation &Simulation::propagate(const Input &in,
     ArrayXd time = ArrayXd::LinSpaced(N, -window, window);
     const double dt = time(1) - time(0);
 
-    // Frequency axis centred on 0. The bin spacing must be exactly 1/(N*dt) to
-    // line up with the FFT output; LinSpaced over [-1/(2dt), +1/(2dt)] would
-    // stretch the grid by N/(N-1) and leave the last bin half a bin off.
-    const long half =
-        N / 2; // N is even, so bin `half` is the most negative one
+    const long half = N / 2;
     ArrayXcd Df = ((ArrayXd::LinSpaced(N, 0.0, static_cast<double>(N - 1)) -
                     static_cast<double>(half)) /
                    (static_cast<double>(N) * dt))
                       .cast<std::complex<double>>();
 
-    // --- Input signal ---
     ArrayXd E_in = in.sample(time);
 
     std::cout << "--- MRR configuration ---\n"
@@ -273,11 +192,8 @@ const Simulation::Propagation &Simulation::propagate(const Input &in,
               << "dv (Eq4): " << ring.transition_width() / 1e9 << " GHz\n"
               << "input:    " << in.describe() << std::endl;
 
-    // --- Frequency responses: physical ring vs ideal fractional derivative ---
     ArrayXcd H_through = ring.compute_H(Df);
 
-    // Ideal fractional derivative (j*2*pi*Df)^n. No delay term here: the two
-    // waveforms are aligned afterwards with best_lag(), see the note there.
     ArrayXcd H_diff(N);
     for (long i = 0; i < N; ++i) {
         std::complex<double> j_omega(0.0, 2.0 * M_PI * Df(i).real());
@@ -285,8 +201,7 @@ const Simulation::Propagation &Simulation::propagate(const Input &in,
                                                 : std::pow(j_omega, n);
     }
 
-    // --- Propagation: FFT, spectral multiplication, IFFT ---
-    FFT<double> fft;
+    Eigen::FFT<double> fft;
     VectorXcd fft_raw;
     VectorXd E_in_vec = E_in.matrix();
     fft.fwd(fft_raw, E_in_vec);
@@ -305,11 +220,9 @@ const Simulation::Propagation &Simulation::propagate(const Input &in,
     p.input_label = in.describe();
     p.view_ns = 2.5 * in.T0 * 1e9;
 
-    // Optical power |y(t)|^2
     p.power_ring = out_ring_t.array().abs2();
     p.power_diff = out_diff_t.array().abs2();
 
-    // --- Normalisation for plotting ---
     p.time_ns = time * 1e9;
     p.in_norm = E_in / E_in.maxCoeff();
 
@@ -331,12 +244,6 @@ const Simulation::Propagation &Simulation::propagate(const Input &in,
     if (p.power_ring.maxCoeff() > 1e-12)
         p.power_ring /= p.power_ring.maxCoeff();
 
-    // The ideal differentiator has zero group delay, so the offset between the
-    // two waveforms is a real property of the ring. The lag is always measured
-    // and reported; `align` only decides whether it is also removed. Sliding
-    // the ideal onto the ring answers a different question - "is the derivative
-    // the right shape?" rather than "when does it arrive?" - by taking the
-    // latency out so only shape error remains.
     p.lag = best_lag(p.power_diff, p.power_ring);
     p.lag_ps = p.lag * dt * 1e12;
 
@@ -352,19 +259,56 @@ const Simulation::Propagation &Simulation::propagate(const Input &in,
         p.power_diff = shift_samples(p.power_diff, p.lag);
         p.diff_real_norm = shift_samples(p.diff_real_norm, p.lag);
     }
+
     last_propagation = p;
     has_result = true;
     return last_propagation;
 }
 
-void Simulation::plot_waveforms() const {
+void Simulation::plot_input_signal() const {
     if (!has_result) {
         throw std::runtime_error(
-            "Nessun segnale propagato. Esegui prima sim.propagate()!");
+            "Nessun dato propagato. Esegui prima sim.run()!");
     }
-    plt::figure_size(900, 700);
+    plt::figure_size(800, 450);
+    plt::plot(to_std_vec(last_propagation.time_ns),
+              to_std_vec(last_propagation.in_norm),
+              {{"color", "black"},
+               {"linewidth", "2"},
+               {"label", last_propagation.input_label}});
+    if (last_propagation.view_ns > 0.0) {
+        plt::xlim(-last_propagation.view_ns, last_propagation.view_ns);
+    }
+    finish_axes("Time [ns]", "Input signal y(t)");
+}
 
-    // Plotting della parte reale e immaginaria
+// =========================================================================
+// VISUALIZZAZIONE TEMPORALE UNIFICATA (3 SUBPLOT)
+// =========================================================================
+
+void Simulation::plot_time_domain() const {
+    if (!has_result) {
+        throw std::runtime_error(
+            "Nessun dato propagato. Esegui prima sim.propagate()!");
+    }
+
+    plt::figure_size(950, 900);
+
+    // Subplot 1: Segnale di ingresso
+    plt::subplot(3, 1, 1);
+    plt::plot(to_std_vec(last_propagation.time_ns),
+              to_std_vec(last_propagation.in_norm),
+              {{"color", "black"},
+               {"linewidth", "2"},
+               {"label", last_propagation.input_label}});
+    if (last_propagation.view_ns > 0.0) {
+        plt::xlim(-last_propagation.view_ns, last_propagation.view_ns);
+    }
+    finish_axes("Time [ns]", "Input signal y(t)");
+
+    // Subplot 2: Forme d'onda (derivata ideale vs uscita dell'anello)
+    plt::subplot(3, 1, 2);
+    plt::title(last_propagation.caption);
     plt::plot(to_std_vec(last_propagation.time_ns),
               to_std_vec(last_propagation.diff_real_norm),
               {{"color", "black"},
@@ -380,19 +324,92 @@ void Simulation::plot_waveforms() const {
                {"linestyle", "--"},
                {"linewidth", "2"},
                {"label", "MRR output (imag)"}});
-
     if (last_propagation.view_ns > 0.0) {
         plt::xlim(-last_propagation.view_ns, last_propagation.view_ns);
     }
-    plt::xlabel("Time [ns]");
-    plt::ylabel("Derivative y'(t)");
-    plt::title(last_propagation.caption);
-    plt::grid(true);
-    plt::legend();
+    finish_axes("Time [ns]", "Derivative y'(t)");
+
+    // Subplot 3: Potenza ottica |y'(t)|^2
+    plt::subplot(3, 1, 3);
+    plt::plot(to_std_vec(last_propagation.time_ns),
+              to_std_vec(last_propagation.power_diff),
+              {{"color", "black"},
+               {"linewidth", "2"},
+               {"label", "ideal derivative (power)"}});
+    plt::plot(to_std_vec(last_propagation.time_ns),
+              to_std_vec(last_propagation.power_ring),
+              {{"color", "red"},
+               {"linewidth", "2"},
+               {"label", "MRR output (power)"}});
+    if (last_propagation.view_ns > 0.0) {
+        plt::xlim(-last_propagation.view_ns, last_propagation.view_ns);
+    }
+    finish_axes("Time [ns]", "|y'(t)|^2");
+
+    plt::tight_layout();
 }
+// =========================================================================
+// RISPOSTA IN FREQUENZA UNIFICATA
+// =========================================================================
 
-void Simulation::plot_waveforms() const {}
+void Simulation::plot_frequency_response() const {
+    // 1. La banda di differenziazione viene letta direttamente dall'anello
+    const double dv = ring.transition_width();
+    const double f_ref = dv / 2.0;
 
-void Simulation::fractional_response(double B) const {
-    fractional_response(ring, n, B);
+    // 2. Griglia di frequenza centrata sul notch
+    const double span_hz = std::max(1.0e9, 3.0 * dv);
+    ArrayXd freq_hz = ArrayXd::LinSpaced(N, -span_hz, span_hz);
+    std::vector<double> freq_ghz = to_std_vec((freq_hz / 1e9).eval());
+
+    // --- MRR ---
+    ArrayXcd H_ring = ring.compute_H(freq_hz);
+    ArrayXd ring_dB = to_dB(H_ring.abs(), freq_hz, f_ref);
+    ArrayXd ring_phase = ring.compute_phase(freq_hz) / M_PI;
+
+    // --- Derivata ideale (j*2*pi*f)^n ---
+    ArrayXd ideal_abs = (2.0 * M_PI * freq_hz).abs().pow(n);
+    ArrayXd ideal_dB = to_dB(ideal_abs, freq_hz, f_ref);
+    ArrayXd ideal_phase = freq_hz.sign() * (n / 2.0);
+
+    char title[192];
+    char heading[96];
+    if (std::abs(n - 1.0) < 1e-4) {
+        std::snprintf(heading, sizeof(heading), "First order (n = 1.0)");
+    } else {
+        std::snprintf(heading, sizeof(heading), "Fractional order (n = %.2f)",
+                      n);
+    }
+
+    plt::figure_size(1100, 480);
+
+    // --- Subplot Modulo ---
+    plt::subplot(1, 2, 1);
+    plt::title(std::string(heading) + "\n" + ring.params_string());
+    plot_ring_vs_ideal(freq_ghz, to_std_vec(ring_dB), to_std_vec(ideal_dB),
+                       ring.label());
+
+    // Linee di ancoraggio su +/- dv/2
+    plt::axvline(f_ref / 1e9, 0.0, 1.0,
+                 {{"color", "gray"}, {"linestyle", ":"}});
+    plt::axvline(-f_ref / 1e9, 0.0, 1.0,
+                 {{"color", "gray"}, {"linestyle", ":"}});
+
+    const double view_ghz = span_hz / 1e9;
+    plt::xlim(-view_ghz, view_ghz);
+    plt::ylim(-25.0, 5.0);
+    finish_axes("Frequency [GHz]", "Magnitude [dB]");
+
+    // --- Subplot Fase ---
+    std::snprintf(title, sizeof(title), "Phase (ideal = +/- %.2f pi)", n / 2.0);
+    plt::subplot(1, 2, 2);
+    plt::title(std::string(title));
+    plot_ring_vs_ideal(freq_ghz, to_std_vec(ring_phase),
+                       to_std_vec(ideal_phase), ring.label());
+
+    plt::xlim(-view_ghz, view_ghz);
+    plt::ylim(-1.0, 1.0);
+    finish_axes("Frequency [GHz]", "Phase [rad / pi]");
+
+    plt::tight_layout();
 }

@@ -7,9 +7,7 @@ static const double n_eff = 2.4;     // effective / group index
 
 int main() {
     const double n = 0.54; // fractional order
-    const double B = 10e9; // target 3 dB bandwidth [Hz]
 
-    // --- Main result: the differentiated waveform ---
     MRR ring = MRR::fractional_order(n, R_ring, 0.99, n_eff);
 
     // The paper drives its 0.54-order device with a Gaussian sized against the
@@ -21,10 +19,12 @@ int main() {
     // Create the impulse coupled to the ring
     Simulation::Input pulse = Simulation::Input::gaussian_matched(ring);
 
-    sim.propagate(pulse, false);
-    sim.plot_waveforms();
+    sim.run(pulse, false);
 
-    sim.fractional_response(1.421e9);
+    sim.plot_input_signal();
+    sim.plot_time_domain();
+    sim.plot_frequency_response();
+
     sim.show();
 
     return 0;
