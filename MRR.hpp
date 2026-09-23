@@ -17,8 +17,6 @@ class MRR {
      * @brief Coupler convention: the transmission matrix of the bus/ring
      *        coupler is [[r, -j*t], [-j*t, r]], so `r` is the diagonal
      *        (self-coupling, the residual) and `t` is the cross-coupling.
-     *        Note `r` (lowercase) is unrelated to `R`, the ring radius.
-     *        They satisfy r^2 + t^2 = 1 for a lossless coupler.
      */
     MRR(double R,
         double r,
@@ -72,7 +70,7 @@ class MRR {
     double radius() const { return R; }          // [m]
     double length() const { return L_r; }        // circumference [m]
     double self_coupling() const { return r; }          // diagonal, `r`
-    double cross_coupling() const { return std::sqrt(1.0 - r * r); } // `-jt`
+    double cross_coupling() const { return std::sqrt(1.0 - r * r); } //antidiagonal, `-jt`
     double round_trip_loss() const { return xi; }
     double group_index() const { return n_g; }
     double round_trip_time() const { return tau; }   // [s]
@@ -87,7 +85,7 @@ class MRR {
     double fwhm() const { return fsr() / finesse(); }
 
   private:
-    double R;   // Radius [m] (NOT the coupler `r` below)
+    double R;   // Radius [m]
     double L_r; // Length (circumference)
     double r;   // self coupling: diagonal of the coupler matrix
     double xi;  // ring loss (single-pass amplitude transmission)

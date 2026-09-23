@@ -37,6 +37,37 @@ template <typename Derived> auto fftshift(const DenseBase<Derived> &vec) {
   return out;
 }
 
+// The ring output lags the ideal derivative. 
+// The two waveforms are therefore aligned numerically, which is also how the
+// reference paper compares them when it reports cross-correlation errors.
+long best_lag(const ArrayXd &a, const ArrayXd &b) {
+  const long N = a.size();
+  FFT<double> fft;
+  VectorXcd A, B, corr;
+  VectorXd av = (a - a.mean()).matrix();
+  VectorXd bv = (b - b.mean()).matrix();
+  fft.fwd(A, av);
+  fft.fwd(B, bv);
+  VectorXcd prod = B.array() * A.array().conjugate();
+  fft.inv(corr, prod);
+
+  Eigen::Index k;
+  ArrayXd re = corr.real();
+  re.maxCoeff(&k);
+  return (k > N / 2) ? static_cast<long>(k) - N : static_cast<long>(k);
+}
+
+// Shifts `arr` later in time by `k` samples, zero-filling the vacated end.
+ArrayXd shift_samples(const ArrayXd &arr, long k) {
+  const long N = arr.size();
+  ArrayXd out = ArrayXd::Zero(N);
+  if (k >= 0)
+    out.tail(N - k) = arr.head(N - k);
+  else
+    out.head(N + k) = arr.tail(N + k);
+  return out;
+}
+
 // Magnitude in dB, normalised at the reference frequency `f_ref` [Hz].
 //
 // Both the ring and the ideal response must be anchored at the same frequency,
@@ -200,8 +231,12 @@ void figure_time_domain() {
   // Frequency axis centred on 0. The bin spacing must be exactly 1/(N*dt) to
   // line up with the FFT output; LinSpaced over [-1/(2dt), +1/(2dt)] would
   // stretch the grid by N/(N-1) and leave the last bin half a bin off.
-  ArrayXcd Df = ((ArrayXd::LinSpaced(N, 0.0, double(N - 1)) - double(N / 2)) /
-      (double(N) * dt)).cast<std::complex<double>>();
+  const long half = N / 2; // N is even, so bin `half` is the most negative one
+  ArrayXcd Df =
+      ((ArrayXd::LinSpaced(N, 0.0, static_cast<double>(N - 1)) -
+        static_cast<double>(half)) /
+          (static_cast<double>(N) * dt))
+          .cast<std::complex<double>>();
 
   // --- Input signal: 12th-order super-Gaussian, T0 = 1 ns ---
   const double A = 1e10;
@@ -223,19 +258,14 @@ void figure_time_domain() {
   // --- Frequency responses: physical ring vs ideal fractional derivative ---
   ArrayXcd H_through = ring.compute_H(Df);
 
-  // Ideal fractional derivative (j*2*pi*Df)^n, with a delay term that lines the
-  // ideal waveform up in time with the ring output.
-  // TODO: justify the tau/2 delay properly - the ring's group delay at
-  // resonance is tau/(1 - r*xi), not tau/2.
+  // Ideal fractional derivative (j*2*pi*Df)^n. No delay term here: the two
+  // waveforms are aligned afterwards with best_lag(), see the note there.
   ArrayXcd H_diff(N);
   for (long i = 0; i < N; ++i) {
     std::complex<double> j_omega(0.0, 2.0 * M_PI * Df(i).real());
-    if (std::abs(j_omega) < 1e-18) {
-      H_diff(i) = 0.0;
-    } else {
-      H_diff(i) = std::pow(j_omega, n) *
-                  std::exp(-1.0i * ring.round_trip_time() * M_PI * Df(i));
-    }
+    H_diff(i) = (std::abs(j_omega) < 1e-18)
+                    ? std::complex<double>(0.0, 0.0)
+                    : std::pow(j_omega, n);
   }
 
   // --- Propagation: FFT, spectral multiplication, IFFT ---
@@ -279,6 +309,23 @@ void figure_time_domain() {
   if (power_ring.maxCoeff() > 1e-12)
     power_ring /= power_ring.maxCoeff();
 
+  // The ideal differentiator has zero group delay, so the offset between the
+  // two waveforms is a real property of the ring.
+  // The lag is measured and reported, but the curves are plotted
+  // unshifted so the ring's actual latency stays visible.
+  const long lag = best_lag(power_diff, power_ring);
+  const double lag_ps = lag * dt * 1e12;
+
+  char align[160];
+  std::snprintf(align, sizeof(align),
+      "ring lags the ideal by %+.1f ps (%+.1f tau), shown unshifted", lag_ps,
+      lag * dt / ring.round_trip_time());
+  std::cout << align << std::endl;
+
+  // Uncomment to slide the ideal onto the ring.
+  power_diff = shift_samples(power_diff, lag);
+  diff_real_norm = shift_samples(diff_real_norm, lag);
+
   plt::figure_size(900, 950);
 
   // --- Input signal ---
@@ -304,6 +351,7 @@ void figure_time_domain() {
       {{"color", "red"}, {"linestyle", "--"}, {"linewidth", "2"},
       {"label", "MRR output (imag)"}});
   plt::xlim(-2.5, 2.5);
+  plt::title(std::string(align));
   plt::xlabel("Time [ns]");
   plt::ylabel("Derivative y(t)");
   plt::grid(true);
