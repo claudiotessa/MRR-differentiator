@@ -5,6 +5,7 @@
 #include <cmath>
 #include <complex>
 #include <stdexcept>
+#include <string>
 
 class MRR {
 
@@ -83,6 +84,14 @@ class MRR {
 
     /// 3 dB linewidth of the resonance [Hz].
     double fwhm() const { return fsr() / finesse(); }
+
+    // --- Formatting ----------------------------------------------------
+
+    /// Full parameter list, on two lines, for a subplot title.
+    std::string params_string() const;
+
+    /// Short "MRR (r = ..., xi = ...)" label for a legend entry.
+    std::string label() const;
 
   private:
     double R;   // Radius [m]
