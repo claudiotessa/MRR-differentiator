@@ -98,6 +98,34 @@ class MRR {
     double round_trip_time() const { return tau; } // [s]
     double fsr() const { return 1.0 / tau; }       // [Hz]
 
+    // --- Resonance position --------------------------
+    // n_g sets how wide the resonances are, n_eff sets where they sit.
+    // compute_H() works in detuning *from* resonance, so n_eff cannot appear
+    // there; it enters by turning an index error into an offset `df`.
+
+    /// How many wavelengths fit round the ring: m = n_eff * L / lambda.
+    double mode_order(double lambda0 = 1.55e-6) const {
+        return std::round(n_eff * L_r / lambda0);
+    }
+
+    /// Where the ring really resonates [m]. Only whole m are allowed, so this
+    /// is generally not `lambda0`.
+    double resonance_wavelength(double lambda0 = 1.55e-6) const {
+        return n_eff * L_r / mode_order(lambda0);
+    }
+
+    /// Offset [Hz] from an n_eff error: at fixed m, df/f = -dn_eff/n_eff.
+    double detuning_from_index_error(double dn_eff,
+                                     double lambda0 = 1.55e-6) const {
+        return -(c / lambda0) * dn_eff / n_eff;
+    }
+
+    /// Offset [Hz] from a measured resonance shift `dlambda` [m].
+    static double detuning_from_wavelength_shift(double dlambda,
+                                                 double lambda0 = 1.55e-6) {
+        return -c * dlambda / (lambda0 * lambda0);
+    }
+
     /// Finesse = FSR / FWHM, from the Airy linewidth of Eq. (1).
     double finesse() const { return M_PI * std::sqrt(r * xi) / (1.0 - r * xi); }
 
