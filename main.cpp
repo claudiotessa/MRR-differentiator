@@ -40,7 +40,7 @@ int main() {
     // 2. Check the unperturbed case
     std::cout << ">>> Nominal case..." << std::endl;
     Simulation nominal_sim(ring, n);
-    nominal_sim.run(pulse, true);
+    nominal_sim.run(pulse, false); // plot the ideal unshifted
     std::cout << "Nominal Dn: " << nominal_sim.get_error() * 100.0
               << " %\n"
               << std::endl;
@@ -49,8 +49,7 @@ int main() {
     MonteCarlo::Config config;
     config.trials = 500;           // chips simulated
     config.yield_threshold = 0.10; // pass if Dn <= 10%
-    config.align_waveforms =
-        true; // shape error only, latency excluded
+    config.align_waveforms = false; // plot-only flag; no effect on D_n
 
     // Fabrication tolerances typical of 220 nm SOI
     config.sigma_r = 0.0015;    // coupling, from the lithographic gap

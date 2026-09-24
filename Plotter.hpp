@@ -6,8 +6,6 @@
 
 class Plotter {
   public:
-    static void plot_input_signal(const Simulation::Propagation &p);
-
     // The three time-domain subplots, from data already computed.
     static void plot_time_domain(const Simulation::Propagation &p);
 

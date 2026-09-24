@@ -31,7 +31,10 @@ class MonteCarlo {
             0.05e9; // residual lock error [Hz]
 
         double yield_threshold = 0.10; // pass if D_n <= 10%
-        bool align_waveforms = true;   // measure shape error only
+        /// Plot-only: D_n is always measured on the overlapped waveforms.
+        /// Nothing in the Monte Carlo draws, so this changes no result here.
+        bool align_waveforms = false;
+        // bool align_waveforms = true;
 
         /// Fixed so a number quoted in a report can be regenerated.
         unsigned long long seed = 1;

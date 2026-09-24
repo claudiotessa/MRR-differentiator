@@ -50,18 +50,6 @@ void Plotter::show() { plt::show(); }
 // TIME-DOMAIN FIGURES
 // =========================================================================
 
-void Plotter::plot_input_signal(const Simulation::Propagation &p) {
-    plt::figure_size(800, 450);
-    plt::plot(
-        to_std_vec(p.time_ns), to_std_vec(p.in_norm),
-        {{"color", "black"}, {"linewidth", "2"}, {"label", p.input_label}});
-
-    if (p.view_ns > 0.0) {
-        plt::xlim(-p.view_ns, p.view_ns);
-    }
-    finish_axes("Time [ns]", "Input signal y(t)");
-}
-
 void Plotter::plot_time_domain(const Simulation::Propagation &p) {
     plt::figure_size(950, 900);
 
@@ -182,8 +170,7 @@ void Plotter::plot_frequency_response(const MRR &ring, double n, long N) {
 
 void Plotter::plot_all(const Simulation::Propagation &p, const MRR &ring,
                        double n, bool show_immediately) {
-    plot_input_signal(p);
-    plot_time_domain(p);
+    plot_time_domain(p); // its first subplot is the input
     plot_frequency_response(ring, n);
 
     if (show_immediately) {

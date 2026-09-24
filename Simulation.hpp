@@ -96,7 +96,7 @@ class Simulation {
      *        with `out` = |f_n|^2 (ring) and `ideal` = |g_n|^2.
      *
      * Relative, so dt cancels and the sums stand in for the integrals. Both
-     * waveforms must be peak-normalised and time-aligned first: the ring is
+     * waveforms must be peak-normalised and overlapped in time: the ring is
      * lossy and answers a ringdown late, and neither is shape error.
      */
     static double power_error(const Eigen::ArrayXd &out,

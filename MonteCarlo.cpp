@@ -14,7 +14,7 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     res.r_samples.reserve(config.trials);
     res.xi_samples.reserve(config.trials);
     res.neff_samples.reserve(config.trials);
-    res.ng_samples.reserve(config.trials);r > xi -
+    res.ng_samples.reserve(config.trials);
     res.df_samples.reserve(config.trials);
 
     if (config.trials <= 0)

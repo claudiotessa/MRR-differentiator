@@ -243,7 +243,9 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
     p.lag = best_lag(p.power_diff, p.power_ring);
     p.lag_ps = p.lag * dt * 1e12;
 
-    // Always measured aligned; `align` only decides what the figures show.
+    // Always measured on the overlapped pair: D_n is a shape error, and an
+    // unshifted comparison would integrate the ring's latency instead.
+    // `align` only decides what the figures show.
     const ArrayXd ideal_aligned = shift_samples(p.power_diff, p.lag);
     p.error_Dn = power_error(p.power_ring, ideal_aligned);
 
