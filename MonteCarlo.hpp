@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "Fabrication.hpp"
 #include "MRR.hpp"
 #include "Simulation.hpp"
 
@@ -17,12 +18,23 @@ class MonteCarlo {
         double lambda_0 =
             1550e-9; // carrier wavelength [m]
 
-        // Standard deviations, Gaussian about the nominal values.
-        double sigma_r =
-            0.0015; // coupler gap (self-coupling)
-        double sigma_xi = 0.002;  // sidewall roughness / loss
-        double sigma_neff = 2e-4; // geometry error on the mode index
-        double sigma_ng = 0.02;   // group index
+        /// Draw the geometry error once per device and derive r, xi, n_eff
+        /// and n_g from it: one width bias sets both the gap and the mode
+        /// index. False restores independent draws, for comparison only.
+        bool correlated = true;
+
+        // Geometry, used when `correlated`.
+        double sigma_width = fab::process::sigma_width;   // [m]
+        double sigma_height = fab::process::sigma_height; // [m]
+        double sigma_radius = fab::process::sigma_radius; // [m]
+        double dxi_dwidth = fab::sensitivity::dxi_dwidth; // [1/m], unmeasured
+        double dng_dwidth = fab::sensitivity::dng_dwidth; // [1/m], unsourced
+
+        // Optical, used when not `correlated`.
+        double sigma_r = fab::sigma_r();
+        double sigma_xi = 0.002;
+        double sigma_neff = fab::sigma_neff();
+        double sigma_ng = 0.02;
 
         // Active thermal tuning. When on, a heater re-locks the carrier and
         // the neff-driven offset is replaced by the heater's residual error.
@@ -54,6 +66,10 @@ class MonteCarlo {
         std::vector<double> ng_samples;
         std::vector<double> df_samples; // [GHz]
         std::vector<double> n_samples;  // order actually realised, MRR::order()
+        // Geometry errors [m], empty on the independent path.
+        std::vector<double> dwidth_samples;
+        std::vector<double> dheight_samples;
+        std::vector<double> dradius_samples;
 
         double mean_error = 0.0;
         double std_error = 0.0;

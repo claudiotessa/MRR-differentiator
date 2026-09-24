@@ -17,6 +17,9 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     res.ng_samples.reserve(config.trials);
     res.df_samples.reserve(config.trials);
     res.n_samples.reserve(config.trials);
+    res.dwidth_samples.reserve(config.trials);
+    res.dheight_samples.reserve(config.trials);
+    res.dradius_samples.reserve(config.trials);
 
     if (config.trials <= 0)
         return res;
@@ -24,7 +27,12 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     std::random_device rd;
     std::mt19937_64 rng(config.seed ? config.seed : rd());
 
-    // Centred on the nominal ring
+    // Geometry errors, zero-mean.
+    std::normal_distribution<double> dist_w(0.0, config.sigma_width);
+    std::normal_distribution<double> dist_h(0.0, config.sigma_height);
+    std::normal_distribution<double> dist_R(0.0, config.sigma_radius);
+
+    // Optical parameters, centred on the nominal ring.
     std::normal_distribution<double> dist_r(nominal_ring.self_coupling(),
                                             config.sigma_r);
     std::normal_distribution<double> dist_xi(nominal_ring.round_trip_loss(),
@@ -41,27 +49,55 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     int passed_count = 0;
 
     if (config.verbose)
-        std::cout << "\n=== Monte Carlo (" << config.trials
-                  << " trials) ===" << std::endl;
+        std::cout << "\n=== Monte Carlo (" << config.trials << " trials, "
+                  << (config.correlated ? "correlated geometry" : "independent")
+                  << ") ===" << std::endl;
 
     for (int i = 0; i < config.trials; ++i) {
-        // Drawn, then held to the physical range
-        double r_sim = 0.0, xi_sim = 0.0;
+        // The whole device comes out of one attempt: r and n_eff share a dw
+        // and cannot be redrawn apart.
+        double r_sim = 0.0, xi_sim = 0.0, neff_sim = 0.0, ng_sim = 0.0;
+        double R_sim = nominal_ring.radius();
+        double dw = 0.0, dh = 0.0, dR = 0.0;
+
         for (int attempt = 0;; ++attempt) {
-            r_sim = std::clamp(dist_r(rng), 0.85, 0.9999);
-            xi_sim = std::clamp(dist_xi(rng), 0.85, 0.9999);
+            if (config.correlated) {
+                dw = dist_w(rng);
+                dh = dist_h(rng);
+                dR = dist_R(rng);
+
+                // +dw closes the gap, strengthening the coupling: r falls.
+                r_sim = nominal_ring.self_coupling() -
+                        fab::sensitivity::dr_dgap * dw;
+                neff_sim = nominal_ring.mode_index() +
+                           fab::sensitivity::dneff_dwidth * dw +
+                           fab::sensitivity::dneff_dheight * dh;
+                // Bend-loss limited at this radius, so dR drives xi.
+                xi_sim = nominal_ring.round_trip_loss() +
+                         fab::sensitivity::dxi_dradius * dR +
+                         config.dxi_dwidth * dw;
+                ng_sim = nominal_ring.group_index() + config.dng_dwidth * dw;
+                R_sim = nominal_ring.radius() + dR;
+            } else {
+                r_sim = dist_r(rng);
+                xi_sim = dist_xi(rng);
+                neff_sim = dist_neff(rng);
+                ng_sim = dist_ng(rng);
+            }
+
+            r_sim = std::clamp(r_sim, 0.5, 0.9999);
+            xi_sim = std::clamp(xi_sim, 0.5, 0.9999);
+            ng_sim = std::max(1.5, ng_sim);
+
             if (!config.enforce_under_coupled || r_sim > xi_sim)
                 break;
             ++res.redraws;
-            // A design whose margin is small next to sigma_r/sigma_xi lands
-            // here constantly; refusing to spin forever makes that visible.
+            // A small margin lands here constantly; do not spin forever.
             if (attempt >= 999)
                 throw std::runtime_error(
                     "MonteCarlo: cannot draw r > xi - the coupling margin is "
                     "too small for these tolerances");
         }
-        double neff_sim = dist_neff(rng);
-        double ng_sim = std::max(1.5, dist_ng(rng));
 
         // Resonance offset from the mode-index error
         double df_sim = 0.0;
@@ -74,9 +110,8 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
             df_sim = -f0 * (delta_neff / ng_sim);
         }
 
-        // The as-fabricated ring
-        MRR perturbed_ring(nominal_ring.radius(), r_sim, xi_sim, neff_sim,
-                           ng_sim, df_sim);
+        // R_sim, not the nominal radius: it moves tau and so the band too.
+        MRR perturbed_ring(R_sim, r_sim, xi_sim, neff_sim, ng_sim, df_sim);
 
         // Headless and silent: thousands of runs, no plotting, no narration
         Simulation sim(perturbed_ring, n, sim_samples);
@@ -91,6 +126,11 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
         res.ng_samples.push_back(ng_sim);
         res.df_samples.push_back(df_sim / 1e9);
         res.n_samples.push_back(perturbed_ring.order());
+        if (config.correlated) {
+            res.dwidth_samples.push_back(dw);
+            res.dheight_samples.push_back(dh);
+            res.dradius_samples.push_back(dR);
+        }
 
         if (err_pct <= (config.yield_threshold * 100.0)) {
             passed_count++;
@@ -118,8 +158,8 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     }
     res.std_error = std::sqrt(sq_sum / config.trials);
 
-    // The order the process actually delivered. Over-coupled draws would be
-    // NaN, but enforce_under_coupled has already rejected them.
+    // The order actually delivered. NaN if over-coupled, but
+    // enforce_under_coupled has already rejected those.
     double n_sum = std::accumulate(res.n_samples.begin(), res.n_samples.end(), 0.0);
     res.mean_n = n_sum / config.trials;
     double n_sq = 0.0;

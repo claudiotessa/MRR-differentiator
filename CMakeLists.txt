@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Python3 COMPONENTS Interpreter Development NumPy REQUIRED)
 
-add_executable(MRR main.cpp MRR.cpp MRR.hpp Simulation.cpp Simulation.hpp Plotter.hpp Plotter.cpp MonteCarlo.hpp MonteCarlo.cpp)
+add_executable(MRR main.cpp MRR.cpp MRR.hpp Fabrication.hpp Simulation.cpp Simulation.hpp Plotter.hpp Plotter.cpp MonteCarlo.hpp MonteCarlo.cpp)
 
 target_include_directories(MRR PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
