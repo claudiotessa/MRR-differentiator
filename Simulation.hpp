@@ -126,6 +126,9 @@ class Simulation {
     // Mostra tutte le figure create finora
     void show() const;
 
+    // create and show all plots
+    void plot() const;
+
   private:
     MRR ring;
     double n;

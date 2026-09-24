@@ -22,11 +22,6 @@ int main() {
 
     sim.run(pulse, false);
 
-    // sim.plot_input_signal();
-    sim.plot_time_domain();
-    sim.plot_frequency_response();
-
-    sim.show();
-
+    sim.plot();
     return 0;
 }

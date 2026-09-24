@@ -24,14 +24,15 @@ class MRR {
      * @param `n_g` group index: fixes tau, and with it FSR and the band.
      * @param `df` resonance offset [Hz], see compute_H().
      */
-    MRR(double R, double r, double xi, double n_eff, double n_g, double df = 0.0)
+    MRR(double R, double r, double xi, double n_eff, double n_g,
+        double df = 0.0)
         : R(R), L_r(2.0 * M_PI * R), r(r), xi(xi), n_eff(n_eff), n_g(n_g),
           df(df), tau(n_g * (2.0 * M_PI * R) / c) {}
 
     /**
      * @brief Creates a first-order differentiator: the critically coupled ring.
      *
-     * Critical coupling *is* r == xi, so there is nothing to solve 
+     * Critical coupling *is* r == xi, so there is nothing to solve
      *
      * @param `R` radius of the MRR [m].
      * @param `xi` single-pass amplitude transmission (round-trip loss).
@@ -46,7 +47,7 @@ class MRR {
      * radius and the process fix the round-trip loss - and `r` is the single
      * quantity you draw on the mask, through the coupler gap. Eq. (2) solves
      * for it exactly instead of scanning, which is the paper's contribution.
-     * 
+     *
      * @param `n` the order of the differentiator, 0 < n <= 1. At n == 1 the
      *        solution degenerates to critical coupling, r == xi.
      * @param `R` radius of the MRR [m].
@@ -104,9 +105,10 @@ class MRR {
     double fwhm() const { return fsr() / finesse(); }
 
     /**
-     * @brief The differentiator's usable band [Hz]: the input spectrum has to fit inside it.
+     * @brief The differentiator's usable band [Hz]: the input spectrum has to
+     * fit inside it.
      *
-     * Note this is the standard *power* FWHM. 
+     * Note this is the standard *power* FWHM.
      */
     double usable_band() const { return fwhm(); }
 

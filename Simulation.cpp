@@ -463,3 +463,10 @@ void Simulation::plot_frequency_response() const {
 
     plt::tight_layout();
 }
+
+void Simulation::plot() const {
+    plot_input_signal();
+    plot_time_domain();
+    plot_frequency_response();
+    show();
+}
