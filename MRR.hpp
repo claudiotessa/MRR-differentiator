@@ -19,11 +19,14 @@ class MRR {
      *        coupler is [[r, -j*t], [-j*t, r]], so `r` is the diagonal
      *        (self-coupling, the residual) and `t` is the cross-coupling.
      */
-    MRR(double R, double r, double xi, double n_eff, double n_g = -1.0,
-        double detuning = 0.0)
-        : R(R), L_r(2.0 * M_PI * R), r(r), xi(xi), n_eff(n_eff),
-          n_g(n_g > 0.0 ? n_g : n_eff), detuning(detuning),
-          tau((n_g > 0.0 ? n_g : n_eff) * (2.0 * M_PI * R) / c) {}
+    /**
+     * @param `n_eff` mode index: fixes where the resonance sits.
+     * @param `n_g` group index: fixes tau, and with it FSR and the band.
+     * @param `df` resonance offset [Hz], see compute_H().
+     */
+    MRR(double R, double r, double xi, double n_eff, double n_g, double df = 0.0)
+        : R(R), L_r(2.0 * M_PI * R), r(r), xi(xi), n_eff(n_eff), n_g(n_g),
+          df(df), tau(n_g * (2.0 * M_PI * R) / c) {}
 
     /**
      * @brief Creates a first-order differentiator: the critically coupled ring.
@@ -32,9 +35,9 @@ class MRR {
      *
      * @param `R` radius of the MRR [m].
      * @param `xi` single-pass amplitude transmission (round-trip loss).
-     * @param `n_g` group index (sets the round-trip time).
      */
-    static MRR first_order(double R, double xi, double n_g);
+    static MRR first_order(double R, double xi, double n_eff, double n_g,
+                           double df = 0.0);
 
     /**
      * @brief Creates an n-th order differentiator, under-coupled (r > xi).
@@ -48,17 +51,23 @@ class MRR {
      *        solution degenerates to critical coupling, r == xi.
      * @param `R` radius of the MRR [m].
      * @param `xi` single-pass amplitude transmission (round-trip loss).
-     * @param `n_g` group index (sets the round-trip time).
      */
-    static MRR fractional_order(double n, double R, double xi, double n_g);
+    static MRR fractional_order(double n, double R, double xi, double n_eff,
+                                double n_g, double df = 0.0);
 
+    /**
+     * @brief Through-port response, Eq. (1), at detunings `Df` [Hz] measured
+     *        from the *nominal* resonance.
+     *
+     * A fabricated ring does not resonate where it was drawn to, so the whole
+     * response slides by `df`: the round-trip phase is 2*pi*tau*(Df - df).
+     */
     template <typename Derived>
     Eigen::ArrayXcd compute_H(const Eigen::ArrayBase<Derived> &Df) const {
         using namespace std::complex_literals;
 
-        // theta = 2 * pi * tau * Df
         Eigen::ArrayXcd theta =
-            (2.0 * M_PI * tau * Df.derived()).template cast<Complex>();
+            (2.0 * M_PI * tau * (Df.derived() - df)).template cast<Complex>();
         Eigen::ArrayXcd exp_neg_j_theta = (-1.0i * theta).exp();
 
         // Eq. (1) of the paper: through-port response
@@ -82,7 +91,9 @@ class MRR {
         return std::sqrt(1.0 - r * r);
     } // antidiagonal, `-jt`
     double round_trip_loss() const { return xi; }
+    double mode_index() const { return n_eff; }
     double group_index() const { return n_g; }
+    double resonance_offset() const { return df; } // [Hz]
     double round_trip_time() const { return tau; } // [s]
     double fsr() const { return 1.0 / tau; }       // [Hz]
 
@@ -131,10 +142,10 @@ class MRR {
     double L_r;   // Length (circumference)
     double r;     // self coupling: diagonal of the coupler matrix
     double xi;    // ring loss (single-pass amplitude transmission)
-    double n_eff; // effective index of the waveguide mode
-    double n_g;   // group index of the waveguide mode
-    double detuning;
-    double tau; // round trip time
+    double n_eff; // mode index: sets the resonance position
+    double n_g;   // group index: sets tau
+    double df;    // resonance offset from nominal [Hz]
+    double tau;   // round trip time
 };
 
 #endif

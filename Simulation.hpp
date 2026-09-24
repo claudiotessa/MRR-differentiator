@@ -79,6 +79,7 @@ class Simulation {
         Eigen::ArrayXd power_ring;     // ring output, |y|^2
         long lag = 0;                  // ring delay [samples]
         double lag_ps = 0.0;           // ring delay [ps]
+        double error_Dn = 0.0;         // Eq. (3), see power_error()
         double view_ns = 0.0;          // half-width of a sensible x range [ns]
         std::string caption;           // lag, formatted for a subplot title
         std::string ring_label;        // the ring's legend label
@@ -95,6 +96,21 @@ class Simulation {
     const MRR &get_ring() const { return ring; }
     double get_order() const { return n; }
     const Propagation &get_last_result() const { return last_propagation; }
+
+    /// Eq. (3) for the last run(); 0 would be a perfect differentiator.
+    double get_error() const { return last_propagation.error_Dn; }
+
+    // --- Error metric ----------------------------------------------------
+    /**
+     * @brief Eq. (3): D_n = int | |f_n|^2 - |g_n|^2 | dt / int |g_n|^2 dt,
+     *        with `out` = |f_n|^2 (ring) and `ideal` = |g_n|^2.
+     *
+     * Relative, so dt cancels and the sums stand in for the integrals. Both
+     * waveforms must be peak-normalised and time-aligned first: the ring is
+     * lossy and answers a ringdown late, and neither is shape error.
+     */
+    static double power_error(const Eigen::ArrayXd &out,
+                              const Eigen::ArrayXd &ideal);
 
     /**
      * @brief Propaga l'impulso attraverso l'anello ring e memorizza

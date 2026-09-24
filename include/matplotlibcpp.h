@@ -6,7 +6,8 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdint> // <cstdint> requires c++11 support
+#include <cstdint>
+#include <cstring>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -400,9 +401,13 @@ template <typename Numeric> PyObject *get_array(const std::vector<Numeric> &v) {
         return varray;
     }
 
-    PyObject *varray =
-        PyArray_SimpleNewFromData(1, &vsize, type, (void *)(v.data()));
-    return varray;
+    // Copy, do not wrap: matplotlib recaches lazily at draw time, so an array
+    // built over the caller's buffer reads freed memory once that vector dies.
+    PyArrayObject *varray =
+        (PyArrayObject *)PyArray_SimpleNew(1, &vsize, type);
+    if (vsize > 0)
+        std::memcpy(PyArray_DATA(varray), v.data(), v.size() * sizeof(Numeric));
+    return reinterpret_cast<PyObject *>(varray);
 }
 
 template <typename Numeric>

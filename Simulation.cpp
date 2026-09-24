@@ -73,6 +73,19 @@ ArrayXd Simulation::shift_samples(const ArrayXd &arr, long k) {
     return out;
 }
 
+double Simulation::power_error(const ArrayXd &out, const ArrayXd &ideal) {
+    if (out.size() != ideal.size())
+        throw std::invalid_argument(
+            "power_error: the two waveforms must share a time axis");
+
+    const double reference = ideal.sum();
+    if (!(reference > 0.0))
+        throw std::invalid_argument(
+            "power_error: the ideal derivative carries no energy");
+
+    return (out - ideal).abs().sum() / reference;
+}
+
 ArrayXd Simulation::to_dB(const ArrayXd &mag, const ArrayXd &freq_hz,
                           double f_ref) {
     Eigen::Index i;
@@ -212,6 +225,7 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
               << "tau:      " << ring.round_trip_time() * 1e12 << " ps\n"
               << "band:     " << ring.usable_band() / 1e9 << " GHz\n"
               << "phase dv: " << ring.phase_transition_width() / 1e9 << " GHz\n"
+              << "df:       " << ring.resonance_offset() / 1e9 << " GHz\n"
               << "input:    " << in.describe() << std::endl;
 
     ArrayXcd H_through = ring.compute_H(Df);
@@ -269,16 +283,22 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
     p.lag = best_lag(p.power_diff, p.power_ring);
     p.lag_ps = p.lag * dt * 1e12;
 
-    char caption[160];
+    // Always measured aligned; `align` only decides what the figures show.
+    const ArrayXd ideal_aligned = shift_samples(p.power_diff, p.lag);
+    p.error_Dn = power_error(p.power_ring, ideal_aligned);
+
+    char caption[224];
     std::snprintf(caption, sizeof(caption),
-                  "ring lags the ideal by %+.1f ps (%+.1f tau), %s", p.lag_ps,
-                  p.lag * dt / ring.round_trip_time(),
-                  align ? "ideal shifted onto the ring" : "shown unshifted");
+                  "ring lags the ideal by %+.1f ps (%+.1f tau), %s\n"
+                  "D_n = %.2f %%",
+                  p.lag_ps, p.lag * dt / ring.round_trip_time(),
+                  align ? "ideal shifted onto the ring" : "shown unshifted",
+                  p.error_Dn * 100.0);
     p.caption = std::string(caption);
     std::cout << p.caption << std::endl;
 
     if (align) {
-        p.power_diff = shift_samples(p.power_diff, p.lag);
+        p.power_diff = ideal_aligned;
         p.diff_real_norm = shift_samples(p.diff_real_norm, p.lag);
     }
 
