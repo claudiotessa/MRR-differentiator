@@ -81,6 +81,13 @@ class Simulation {
     const MRR &get_ring() const { return ring; }
     double get_order() const { return n; }
     const Propagation &get_last_result() const { return last_propagation; }
+
+    /// Silences run()'s stdout block. The Monte Carlo runs thousands of
+    /// propagations and none of them want to narrate.
+    Simulation &set_verbose(bool v) {
+        verbose = v;
+        return *this;
+    }
     double get_error() const { return last_propagation.error_Dn; }
 
     // --- Error metric ----------------------------------------------------
@@ -106,6 +113,7 @@ class Simulation {
     long N;
     Propagation last_propagation;
     bool has_result = false;
+    bool verbose = true;
 
     // @brief Moves the zero frequency to the centre of the array
     template <typename Derived>

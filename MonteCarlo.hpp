@@ -32,6 +32,15 @@ class MonteCarlo {
 
         double yield_threshold = 0.10; // pass if D_n <= 10%
         bool align_waveforms = true;   // measure shape error only
+
+        /// Fixed so a number quoted in a report can be regenerated.
+        unsigned long long seed = 1;
+
+        /// Redraw any device with r <= xi. Eq. (2) only describes the
+        /// under-coupled branch; an over-coupled draw is a different device,
+        bool enforce_under_coupled = true;
+
+        bool verbose = true; // progress line
     };
 
     struct Result {
@@ -47,6 +56,7 @@ class MonteCarlo {
         double median_error = 0.0;
         double max_error = 0.0;
         double yield_rate = 0.0; // percentage with D_n <= threshold
+        long redraws = 0;        // draws rejected for r <= xi
 
         void print_summary() const;
     };

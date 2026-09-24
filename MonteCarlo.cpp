@@ -6,6 +6,7 @@
 #include <iostream>
 #include <numeric>
 #include <random>
+#include <stdexcept>
 
 MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     Result res;
@@ -13,11 +14,14 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     res.r_samples.reserve(config.trials);
     res.xi_samples.reserve(config.trials);
     res.neff_samples.reserve(config.trials);
-    res.ng_samples.reserve(config.trials);
+    res.ng_samples.reserve(config.trials);r > xi -
     res.df_samples.reserve(config.trials);
 
+    if (config.trials <= 0)
+        return res;
+
     std::random_device rd;
-    std::mt19937_64 rng(rd());
+    std::mt19937_64 rng(config.seed ? config.seed : rd());
 
     // Centred on the nominal ring
     std::normal_distribution<double> dist_r(nominal_ring.self_coupling(),
@@ -35,13 +39,26 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
 
     int passed_count = 0;
 
-    std::cout << "\n=== Monte Carlo (" << config.trials
-              << " trials) ===" << std::endl;
+    if (config.verbose)
+        std::cout << "\n=== Monte Carlo (" << config.trials
+                  << " trials) ===" << std::endl;
 
     for (int i = 0; i < config.trials; ++i) {
         // Drawn, then held to the physical range
-        double r_sim = std::clamp(dist_r(rng), 0.85, 0.9999);
-        double xi_sim = std::clamp(dist_xi(rng), 0.85, 0.9999);
+        double r_sim = 0.0, xi_sim = 0.0;
+        for (int attempt = 0;; ++attempt) {
+            r_sim = std::clamp(dist_r(rng), 0.85, 0.9999);
+            xi_sim = std::clamp(dist_xi(rng), 0.85, 0.9999);
+            if (!config.enforce_under_coupled || r_sim > xi_sim)
+                break;
+            ++res.redraws;
+            // A design whose margin is small next to sigma_r/sigma_xi lands
+            // here constantly; refusing to spin forever makes that visible.
+            if (attempt >= 999)
+                throw std::runtime_error(
+                    "MonteCarlo: cannot draw r > xi - the coupling margin is "
+                    "too small for these tolerances");
+        }
         double neff_sim = dist_neff(rng);
         double ng_sim = std::max(1.5, dist_ng(rng));
 
@@ -60,8 +77,9 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
         MRR perturbed_ring(nominal_ring.radius(), r_sim, xi_sim, neff_sim,
                            ng_sim, df_sim);
 
-        // Headless: no plotting on this path
+        // Headless and silent: thousands of runs, no plotting, no narration
         Simulation sim(perturbed_ring, n, sim_samples);
+        sim.set_verbose(false);
         const auto &prop = sim.run(pulse, config.align_waveforms);
 
         double err_pct = prop.error_Dn * 100.0;
@@ -75,7 +93,17 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
         if (err_pct <= (config.yield_threshold * 100.0)) {
             passed_count++;
         }
+
+        if (config.verbose) {
+            const int step = std::max(1, config.trials / 20);
+            if ((i + 1) % step == 0 || i + 1 == config.trials) {
+                std::printf("\r  %d / %d", i + 1, config.trials);
+                std::fflush(stdout);
+            }
+        }
     }
+    if (config.verbose)
+        std::printf("\r%*s\r", 24, "");
 
     // Descriptive statistics
     double sum =
@@ -108,5 +136,7 @@ void MonteCarlo::Result::print_summary() const {
     std::printf("Std deviation : %.2f %%\n", std_error);
     std::printf("Median Dn     : %.2f %%\n", median_error);
     std::printf("Worst Dn      : %.2f %%\n", max_error);
+    if (redraws > 0)
+        std::printf("Redrawn       : %ld (r <= xi)\n", redraws);
     std::printf("============================================\n\n");
 }

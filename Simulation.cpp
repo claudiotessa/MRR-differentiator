@@ -176,7 +176,8 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
 
     ArrayXd E_in = in.sample(time);
 
-    std::cout << "--- MRR configuration ---\n"
+    if (verbose)
+        std::cout << "--- MRR configuration ---\n"
               << "order n:  " << n << '\n'
               << "r:        " << ring.self_coupling() << '\n'
               << "t:        " << ring.cross_coupling() << '\n'
@@ -254,7 +255,8 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
                   align ? "ideal shifted onto the ring" : "shown unshifted",
                   p.error_Dn * 100.0);
     p.caption = std::string(caption);
-    std::cout << p.caption << std::endl;
+    if (verbose)
+        std::cout << p.caption << std::endl;
 
     if (align) {
         p.power_diff = ideal_aligned;
