@@ -65,11 +65,11 @@ Simulation::Input Simulation::Input::gaussian(double T0) {
     return in;
 }
 
-Simulation::Input Simulation::Input::gaussian_matched(const MRR &ring,
+Simulation::Input Simulation::Input::gaussian_matched(const MRRCascade &cascade,
                                                       double ratio) {
     // exp(-(t/T0)^2) transforms to exp(-(pi*f*T0)^2), whose amplitude FWHM is
     // 2*sqrt(ln2)/(pi*T0). Solve that for the wanted fraction of the band.
-    const double band = ring.usable_band();
+    const double band = cascade.usable_band();
     if (!std::isfinite(band) || band <= 0.0)
         throw std::invalid_argument(
             "gaussian_matched: the ring has no usable band");
@@ -146,50 +146,49 @@ std::string Simulation::Input::describe() const {
 // =========================================================================
 // TIME-DOMAIN COMPUTATION
 // =========================================================================
-
-const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
-    // Without these an infinite T0 - which is what sizing a pulse against a
-    // zero-width band used to produce - silently fills the time axis with NaN
-    // and only aborts 100 lines later, inside std::pow, naming nothing.
-    if (N < 2)
-        throw std::invalid_argument("Simulation::run: N must be at least 2");
-    if (!std::isfinite(in.T0) || in.T0 <= 0.0)
+const Simulation::Propagation &Simulation::run(const Input &in, bool align,
+                                               bool verbose) {
+    if (N < 2) {
+        throw std::invalid_argument("Simulation::run: N deve essere almeno 2");
+    }
+    if (!std::isfinite(in.T0) || in.T0 <= 0.0) {
         throw std::invalid_argument(
-            "Simulation::run: input T0 must be finite and > 0");
+            "Simulation::run: T0 dell'impulso deve essere finito e > 0");
+    }
 
-    const double ringdown =
-        ring.round_trip_time() /
-        (1.0 - ring.self_coupling() * ring.round_trip_loss());
+    // 1. Finestra temporale: calcola il ringdown usando i parametri dello
+    // stadio
+    const double tau_stage = cascade.round_trip_time();
+    const double r_stage = cascade.stage_self_coupling();
+    const double xi_stage = cascade.round_trip_loss();
+
+    const double ringdown = tau_stage / (1.0 - r_stage * xi_stage);
     const double window = std::max(10.0 * in.T0, 40.0 * ringdown);
-    if (!std::isfinite(window) || window <= 0.0)
-        throw std::runtime_error(
-            "Simulation::run: the time window is not finite");
 
+    if (!std::isfinite(window) || window <= 0.0) {
+        throw std::runtime_error(
+            "Simulation::run: la finestra temporale non e' finita");
+    }
+
+    // Asse temporale e passo di campionamento
     ArrayXd time = ArrayXd::LinSpaced(N, -window, window);
     const double dt = time(1) - time(0);
 
+    // 2. Griglia di frequenza centrata a 0 Hz (spettro in banda base attorno
+    // alla portante)
     const long half = N / 2;
     ArrayXcd Df = ((ArrayXd::LinSpaced(N, 0.0, static_cast<double>(N - 1)) -
                     static_cast<double>(half)) /
                    (static_cast<double>(N) * dt))
                       .cast<std::complex<double>>();
 
+    // 3. Campionamento del segnale di ingresso
     ArrayXd E_in = in.sample(time);
 
-    if (verbose)
-        std::cout << "--- MRR configuration ---\n"
-              << "order n:  " << n << '\n'
-              << "r:        " << ring.self_coupling() << '\n'
-              << "t:        " << ring.cross_coupling() << '\n'
-              << "xi:       " << ring.round_trip_loss() << '\n'
-              << "tau:      " << ring.round_trip_time() * 1e12 << " ps\n"
-              << "band:     " << ring.usable_band() / 1e9 << " GHz\n"
-              << "phase dv: " << ring.phase_transition_width() / 1e9 << " GHz\n"
-              << "df:       " << ring.resonance_offset() / 1e9 << " GHz\n"
-              << "input:    " << in.describe() << std::endl;
+    // 4. Risposta in frequenza della cascata: H_tot(f) = PROD H_i(f)
+    ArrayXcd H_through = cascade.compute_H(Df);
 
-    ArrayXcd H_through = ring.compute_H(Df);
-
+    // 5. Risposta in frequenza dell'operatore ideale: (j * 2 * pi * f)^n
     ArrayXcd H_diff(N);
     for (long i = 0; i < N; ++i) {
         std::complex<double> j_omega(0.0, 2.0 * M_PI * Df(i).real());
@@ -197,6 +196,7 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
                                                 : std::pow(j_omega, n);
     }
 
+    // 6. Propagazione spettrale via FFT
     Eigen::FFT<double> fft;
     VectorXcd fft_raw;
     VectorXd E_in_vec = E_in.matrix();
@@ -211,8 +211,9 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
     fft.inv(out_ring_t, fftshift(out_ring_f));
     fft.inv(out_diff_t, fftshift(out_diff_f));
 
+    // 7. Normalizzazione delle forme d'onda temporali
     Propagation p;
-    p.ring_label = ring.label();
+    p.ring_label = cascade.label();
     p.input_label = in.describe();
     p.view_ns = 2.5 * in.T0 * 1e9;
 
@@ -224,8 +225,9 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
 
     p.diff_real_norm = out_diff_t.real().array();
     double max_diff = p.diff_real_norm.maxCoeff();
-    if (std::abs(max_diff) > 1e-12)
+    if (std::abs(max_diff) > 1e-12) {
         p.diff_real_norm /= max_diff;
+    }
 
     p.ring_real_norm = out_ring_t.real().array();
     p.ring_imag_norm = out_ring_t.imag().array();
@@ -235,29 +237,35 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
         p.ring_imag_norm /= max_ring;
     }
 
-    if (p.power_diff.maxCoeff() > 1e-12)
+    if (p.power_diff.maxCoeff() > 1e-12) {
         p.power_diff /= p.power_diff.maxCoeff();
-    if (p.power_ring.maxCoeff() > 1e-12)
+    }
+    if (p.power_ring.maxCoeff() > 1e-12) {
         p.power_ring /= p.power_ring.maxCoeff();
+    }
 
+    // 8. Stima del ritardo di gruppo (lag) e calcolo errore Dn (Eq. 4 del
+    // paper)
     p.lag = best_lag(p.power_diff, p.power_ring);
     p.lag_ps = p.lag * dt * 1e12;
 
-    // Always measured aligned; `align` only decides what the figures show.
     const ArrayXd ideal_aligned = shift_samples(p.power_diff, p.lag);
     p.error_Dn = power_error(p.power_ring, ideal_aligned);
 
     char caption[224];
     std::snprintf(caption, sizeof(caption),
-                  "ring lags the ideal by %+.1f ps (%+.1f tau), %s\n"
-                  "D_n = %.2f %%",
-                  p.lag_ps, p.lag * dt / ring.round_trip_time(),
-                  align ? "ideal shifted onto the ring" : "shown unshifted",
+                  "%s lags ideal by %+.1f ps (%+.1f tau), %s\nD_n = %.2f %%",
+                  cascade.description().c_str(), p.lag_ps,
+                  p.lag * dt / tau_stage,
+                  align ? "ideal shifted onto output" : "shown unshifted",
                   p.error_Dn * 100.0);
     p.caption = std::string(caption);
-    if (verbose)
-        std::cout << p.caption << std::endl;
 
+    if (verbose) {
+        std::cout << p.caption << std::endl;
+    }
+
+    // Allineamento per visualizzazione
     if (align) {
         p.power_diff = ideal_aligned;
         p.diff_real_norm = shift_samples(p.diff_real_norm, p.lag);
@@ -266,4 +274,11 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
     last_propagation = p;
     has_result = true;
     return last_propagation;
+}
+
+void Simulation::print_setup(const Input &in) const {
+    std::cout << "=== Simulation Configuration ===\n"
+              << cascade.params_string() << '\n'
+              << "Input pulse:    " << in.describe() << '\n'
+              << "================================" << std::endl;
 }

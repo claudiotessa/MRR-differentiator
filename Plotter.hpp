@@ -1,28 +1,27 @@
 #ifndef PLOTTER_HPP
 #define PLOTTER_HPP
 
-#include "MRR.hpp"
+#include "MRRCascade.hpp"
+#include "MonteCarlo.hpp"
 #include "Simulation.hpp"
 
 class Plotter {
   public:
     static void plot_input_signal(const Simulation::Propagation &p);
-
-    // The three time-domain subplots, from data already computed.
     static void plot_time_domain(const Simulation::Propagation &p);
-
-    // Ring frequency response: magnitude [dB] and phase.
-    static void plot_frequency_response(const MRR &ring, double n,
+    static void plot_frequency_response(const MRRCascade &cascade,
                                         long N = 100000);
+    static void show(); // Show all previously built figures
 
-    // Show all figures
-    static void show();
-
-    static void plot_all(const Simulation::Propagation &p, const MRR &ring,
-                         double n, bool show_immediately = true);
+    static void plot_all(const Simulation::Propagation &p,
+                         const MRRCascade &cascade,
+                         bool show_immediately = true);
 
     // Overload to extract results automatically
     static void plot_all(const Simulation &sim, bool show_immediately = true);
+
+    static void plot_monte_carlo(const MonteCarlo::Result &res,
+                                 double threshold = 10.0);
 
   private:
     static void plot_ring_vs_ideal(const std::vector<double> &x,

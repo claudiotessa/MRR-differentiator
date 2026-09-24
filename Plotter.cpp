@@ -11,10 +11,6 @@
 namespace plt = matplotlibcpp;
 using namespace Eigen;
 
-// =========================================================================
-// PRIVATE HELPERS
-// =========================================================================
-
 void Plotter::plot_ring_vs_ideal(const std::vector<double> &x,
                                  const std::vector<double> &ring_data,
                                  const std::vector<double> &ideal_data,
@@ -117,11 +113,12 @@ void Plotter::plot_time_domain(const Simulation::Propagation &p) {
 // FREQUENCY-DOMAIN FIGURES
 // =========================================================================
 
-void Plotter::plot_frequency_response(const MRR &ring, double n, long N) {
-    const double band = ring.usable_band();
+void Plotter::plot_frequency_response(const MRRCascade &cascade, long N) {
+    const double band = cascade.usable_band();
+    const double n = cascade.order();
     if (!std::isfinite(band) || band <= 0.0) {
         throw std::runtime_error(
-            "Plotter::frequency_response: the ring has no usable band");
+            "Plotter::frequency_response: cascade has no usable band");
     }
 
     const double f_ref = band / 4.0;
@@ -129,69 +126,99 @@ void Plotter::plot_frequency_response(const MRR &ring, double n, long N) {
     ArrayXd freq_hz = ArrayXd::LinSpaced(N, -span_hz, span_hz);
     std::vector<double> freq_ghz = to_std_vec((freq_hz / 1e9).eval());
 
-    // --- MRR response ---
-    ArrayXcd H_ring = ring.compute_H(freq_hz);
-    ArrayXd ring_dB = to_dB(H_ring.abs(), freq_hz, f_ref);
-    ArrayXd ring_phase = ring.compute_phase(freq_hz) / M_PI;
+    ArrayXcd H_casc = cascade.compute_H(freq_hz);
+    ArrayXd casc_dB = to_dB(H_casc.abs(), freq_hz, f_ref);
+    ArrayXd casc_phase_raw = cascade.compute_phase(freq_hz);
 
-    // --- Ideal derivative (j*2*pi*f)^n ---
+    // Algoritmo di Phase Unwrapping (elimina i salti di 2*pi)
+    ArrayXd casc_phase_unwrapped = casc_phase_raw;
+    double offset = 0.0;
+    for (long i = 1; i < casc_phase_raw.size(); ++i) {
+        double diff = casc_phase_raw(i) - casc_phase_raw(i - 1);
+        if (diff > M_PI) {
+            offset -= 2.0 * M_PI;
+        } else if (diff < -M_PI) {
+            offset += 2.0 * M_PI;
+        }
+        casc_phase_unwrapped(i) += offset;
+    }
+
+    // Centra a zero a f = 0 per simmetria rispetto all'ideale
+    Eigen::Index mid = casc_phase_raw.size() / 2;
+    casc_phase_unwrapped -=
+        (casc_phase_unwrapped(mid) + casc_phase_unwrapped(mid + 1)) / 2.0;
+
+    ArrayXd casc_phase = casc_phase_unwrapped / M_PI;
     ArrayXd ideal_abs = (2.0 * M_PI * freq_hz).abs().pow(n);
     ArrayXd ideal_dB = to_dB(ideal_abs, freq_hz, f_ref);
     ArrayXd ideal_phase = freq_hz.sign() * (n / 2.0);
 
-    char title[192];
     char heading[96];
-    if (std::abs(n - 1.0) < 1e-4) {
-        std::snprintf(heading, sizeof(heading), "First order (n = 1.0)");
-    } else {
-        std::snprintf(heading, sizeof(heading), "Fractional order (n = %.2f)",
-                      n);
-    }
+    std::snprintf(heading, sizeof(heading),
+                  "Differentiator response (order n = %.2f)", n);
 
     plt::figure_size(1100, 480);
 
-    // --- Magnitude ---
     plt::subplot(1, 2, 1);
-    plt::title(std::string(heading) + "\n" + ring.params_string());
-    plot_ring_vs_ideal(freq_ghz, to_std_vec(ring_dB), to_std_vec(ideal_dB),
-                       ring.label());
-
+    plt::title(std::string(heading) + "\n" + cascade.params_string());
+    plot_ring_vs_ideal(freq_ghz, to_std_vec(casc_dB), to_std_vec(ideal_dB),
+                       cascade.label());
     plt::axvline(f_ref / 1e9, 0.0, 1.0,
                  {{"color", "gray"}, {"linestyle", ":"}});
     plt::axvline(-f_ref / 1e9, 0.0, 1.0,
                  {{"color", "gray"}, {"linestyle", ":"}});
-
-    const double view_ghz = span_hz / 1e9;
-    plt::xlim(-view_ghz, view_ghz);
-    plt::ylim(-25.0, 5.0);
+    plt::xlim(-span_hz / 1e9, span_hz / 1e9);
+    plt::ylim(-30.0, 5.0);
     finish_axes("Frequency [GHz]", "Magnitude [dB]");
 
-    // --- Phase ---
-    std::snprintf(title, sizeof(title), "Phase (ideal = +/- %.2f pi)", n / 2.0);
     plt::subplot(1, 2, 2);
+    char title[96];
+    std::snprintf(title, sizeof(title), "Phase (ideal step = +/- %.2f pi)",
+                  n / 2.0);
     plt::title(std::string(title));
-    plot_ring_vs_ideal(freq_ghz, to_std_vec(ring_phase),
-                       to_std_vec(ideal_phase), ring.label());
-
-    plt::xlim(-view_ghz, view_ghz);
-    plt::ylim(-1.0, 1.0);
+    plot_ring_vs_ideal(freq_ghz, to_std_vec(casc_phase),
+                       to_std_vec(ideal_phase), cascade.label());
+    plt::xlim(-span_hz / 1e9, span_hz / 1e9);
+    plt::ylim(-1.0 * std::ceil(n), 1.0 * std::ceil(n));
     finish_axes("Frequency [GHz]", "Phase [rad / pi]");
 
     plt::tight_layout();
 }
 
-void Plotter::plot_all(const Simulation::Propagation &p, const MRR &ring,
-                       double n, bool show_immediately) {
-    plot_input_signal(p);
+void Plotter::plot_all(const Simulation::Propagation &p,
+                       const MRRCascade &cascade, bool show_immediately) {
+    // plot_input_signal(p);
     plot_time_domain(p);
-    plot_frequency_response(ring, n);
-
-    if (show_immediately) {
+    plot_frequency_response(cascade);
+    if (show_immediately)
         show();
-    }
 }
 
 void Plotter::plot_all(const Simulation &sim, bool show_immediately) {
-    plot_all(sim.get_last_result(), sim.get_ring(), sim.get_order(),
-             show_immediately);
+    plot_all(sim.get_last_result(), sim.get_cascade(), show_immediately);
+}
+
+void Plotter::plot_monte_carlo(const MonteCarlo::Result &res,
+                               double threshold) {
+    plt::figure_size(850, 480);
+    plt::hist(res.errors_Dn, 40, "steelblue", 0.75, true);
+
+    plt::axvline(threshold, 0.0, 1.0,
+                 {{"color", "red"},
+                  {"linestyle", "--"},
+                  {"linewidth", "2"},
+                  {"label", "Soglia Yield (10%)"}});
+    plt::axvline(res.mean_error, 0.0, 1.0,
+                 {{"color", "orange"},
+                  {"linestyle", "-"},
+                  {"linewidth", "2"},
+                  {"label", "Media Dn"}});
+
+    char title[128];
+    std::snprintf(title, sizeof(title),
+                  "Distribuzione Errore Monte Carlo (Resa = %.1f%%)",
+                  res.yield_rate);
+    plt::title(std::string(title));
+    finish_axes("Errore di derivazione D_n [%]", "Densita di probabilita");
+    plt::tight_layout();
 }

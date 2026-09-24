@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "MRR.hpp"
+#include "MRRCascade.hpp"
 
 // @brief Numerical experiments on a ring: propagation, alignment and figures.
 class Simulation {
@@ -30,13 +31,9 @@ class Simulation {
         /**
          * @brief A Gaussian whose amplitude-spectrum FWHM is `ratio` times the
          *        ring's usable band, MRR::usable_band().
-         *
-         * The paper's rule is that the input stays inside the ring's FWHM, so
-         * `ratio` <= 1 is the safe choice and smaller is more conservative.
-         * Sizing against Eq. (4) instead would be backwards: that width
-         * shrinks as the ring gets better and is zero at critical coupling.
          */
-        static Input gaussian_matched(const MRR &ring, double ratio = 1.0);
+        static Input gaussian_matched(const MRRCascade &cascade,
+                                      double ratio = 1.0);
 
         /// Flat-topped pulse of half-width `T0` and order 2*`m`.
         static Input super_gaussian(double T0, int m = 6);
@@ -73,42 +70,36 @@ class Simulation {
         std::string input_label;       // the input's legend label
     };
 
-    // @brief Binds the simulation to a ring and a target order.
-    Simulation(const MRR &ring, double n, long N = 100000)
-        : ring(ring), n(n), N(N), has_result(false) {}
+    Simulation(const MRRCascade &cascade, long N = 100000)
+        : cascade(cascade), n(cascade.order()), N(N), has_result(false) {}
 
     // Getters
-    const MRR &get_ring() const { return ring; }
+    const MRRCascade &get_cascade() const { return cascade; }
     double get_order() const { return n; }
     const Propagation &get_last_result() const { return last_propagation; }
+    double get_error() const { return last_propagation.error_Dn; }
 
-    /// Silences run()'s stdout block. The Monte Carlo runs thousands of
-    /// propagations and none of them want to narrate.
+    // Silences run()'s stdout block. The Monte Carlo runs thousands of
+    // propagations and none of them want to narrate.
     Simulation &set_verbose(bool v) {
         verbose = v;
         return *this;
     }
-    double get_error() const { return last_propagation.error_Dn; }
 
-    // --- Error metric ----------------------------------------------------
     /**
      * @brief Eq. (3): D_n = int | |f_n|^2 - |g_n|^2 | dt / int |g_n|^2 dt,
      *        with `out` = |f_n|^2 (ring) and `ideal` = |g_n|^2.
-     *
-     * Relative, so dt cancels and the sums stand in for the integrals. Both
-     * waveforms must be peak-normalised and time-aligned first: the ring is
-     * lossy and answers a ringdown late, and neither is shape error.
      */
     static double power_error(const Eigen::ArrayXd &out,
                               const Eigen::ArrayXd &ideal);
 
-    /**
-     * @brief Propagates the pulse through the ring and stores the result.
-     */
-    const Propagation &run(const Input &in, bool align = true);
+    void print_setup(const Input &in) const;
+
+    const Propagation &run(const Input &in, bool align = true,
+                           bool verbose = false);
 
   private:
-    MRR ring;
+    MRRCascade cascade;
     double n; // differentiation order
     long N;
     Propagation last_propagation;

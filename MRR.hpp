@@ -29,6 +29,10 @@ class MRR {
         : R(R), L_r(2.0 * M_PI * R), r(r), xi(xi), n_eff(n_eff), n_g(n_g),
           df(df), tau(n_g * (2.0 * M_PI * R) / c) {}
 
+    MRR()
+        : R(0.0), L_r(0.0), r(0.0), xi(0.0), n_eff(0.0), n_g(0.0), df(0.0),
+          tau(0.0) {}
+
     /**
      * @brief Creates a first-order differentiator: the critically coupled ring.
      *

@@ -1,83 +1,81 @@
-#include "MRR.hpp"
+#include <iomanip>
+#include <iostream>
+
+#include "MRRCascade.hpp"
 #include "MonteCarlo.hpp"
 #include "Plotter.hpp"
 #include "Simulation.hpp"
-#include <iostream>
-
-// Waveguide parameters shared by every figure.
-static const double R_ring = 100e-6; // ring radius [m]
-static const double n_eff = 2.4;     // mode index, 220 nm SOI strip
-static const double n_g = 4.2;       // group index, same waveguide
-
-// int main() {
-//     const double n = 0.54; // fractional order
-//
-//     MRR ring = MRR::fractional_order(n, R_ring, 0.99, n_eff, n_g);
-//
-//     // The paper drives its 0.54-order device with a Gaussian sized against
-//     the
-//     // ring's Eq. (4) width. Other shapes are available - super_gaussian(),
-//     // sech(), rectangular() - but the Gaussian is the one the paper's error
-//     // figures are measured with, so it is the only fair comparison.
-//     Simulation sim(ring, n);
-//
-//     // Create the impulse coupled to the ring
-//     Simulation::Input pulse = Simulation::Input::gaussian_matched(ring);
-//
-//     sim.run(pulse, true);
-//     Plotter::plot_all(sim);
-//
-//     return 0;
-// }
 
 int main() {
-    const double n = 0.54; // target fractional order
+    // ---------------------------------------------------------------------
+    // 1. Parametri fisici del differenziatore a singolo stadio (n = 0.54)
+    // ---------------------------------------------------------------------
+    const double n = 0.54; // Ordine di derivazione frazionaria (singolo anello)
+    const double R = 1.9e-6;   // Raggio del risonatore: 1.9 um
+    const double xi = 0.9428;  // Perdita round-trip nominale (dal paper)
+    const double n_eff = 2.45; // Indice effettivo di modo
+    const double n_g = 4.05;   // Indice di gruppo (guida Si 400x220 nm)
 
-    // 1. The nominal device, as drawn
-    MRR ring = MRR::fractional_order(n, R_ring, 0.99, n_eff, n_g);
-    Simulation::Input pulse = Simulation::Input::gaussian_matched(ring);
+    // Istanziazione tramite la nuova MRRCascade:
+    // con n = 0.54 alloca internamente un singolo stadio frazionario
+    MRRCascade cascade(n, R, xi, n_eff, n_g);
 
-    // 2. Check the unperturbed case
-    std::cout << ">>> Nominal case..." << std::endl;
-    Simulation nominal_sim(ring, n);
-    nominal_sim.run(pulse, true);
-    std::cout << "Nominal Dn: " << nominal_sim.get_error() * 100.0
+    std::cout << "=== CONFIGURAZIONE NOMINALE ===" << std::endl;
+    std::cout << cascade.params_string() << std::endl;
+
+    // ---------------------------------------------------------------------
+    // 2. Definizione impulso e simulazione nominale
+    // ---------------------------------------------------------------------
+    Simulation::Input pulse = Simulation::Input::gaussian_matched(cascade, 1.0);
+    std::cout << "Impulso: " << pulse.describe() << std::endl;
+
+    Simulation nominal_sim(cascade, 100000);
+    const auto &nominal_res = nominal_sim.run(pulse, true, true);
+
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "Errore nominale Dn: " << nominal_res.error_Dn * 100.0
               << " %\n"
               << std::endl;
 
-    // 3. Monte Carlo yield analysis
-    MonteCarlo::Config config;
-    config.trials = 500;           // chips simulated
-    config.yield_threshold = 0.10; // pass if Dn <= 10%
-    config.align_waveforms =
-        true; // shape error only, latency excluded
+    // Visualizzazione forme d'onda e spettro nominale (tempo e frequenza)
+    Plotter::plot_all(nominal_sim, false);
 
-    // Fabrication tolerances typical of 220 nm SOI
-    config.sigma_r = 0.0015;    // coupling, from the lithographic gap
-    config.sigma_xi = 0.0020;   // propagation loss
-    config.sigma_neff = 1.0e-4; // geometry error on neff
-    config.sigma_ng = 0.02;     // group index
+    // ---------------------------------------------------------------------
+    // 3. Studio Monte Carlo (Configurazione tolleranze di fabbricazione)
+    // ---------------------------------------------------------------------
+    MonteCarlo::Config cfg;
+    cfg.trials = 1000;          // Dispositivi estratti
+    cfg.lambda_0 = 1550e-9;     // Portante ottica [m]
+    cfg.sigma_r = 0.0015;       // Tolleranza gap di accoppiamento
+    cfg.sigma_xi = 0.002;       // Tolleranza rugosità di parete / perdite
+    cfg.sigma_neff = 2e-4;      // Tolleranza geometrica sull'indice di modo
+    cfg.sigma_ng = 0.02;        // Dispersione
+    cfg.yield_threshold = 0.10; // Resa accettata per Dn <= 10%
+    cfg.align_waveforms = true; // Calcolo forma al netto del ritardo puro
+    cfg.seed = 42;
 
-    // Thermal tuning: untuned, a sigma_neff of 1e-4 shifts the resonance by
-    // ~4 GHz and the yield collapses to ~0%. Tuned, a microheater re-locks the
-    // carrier and only its residual error is left.
-    config.enable_thermal_tuning = true;
-    config.sigma_df_tuned = 0.05e9; // residual thermal lock error: 50 MHz
+    // SCENARIO A: Dispositivo non sintonizzato (Untuned)
+    cfg.enable_thermal_tuning = false;
+    std::cout << "--> Esecuzione Monte Carlo UNTUNED (deriva "
+                 "termica/geometrica libera)..."
+              << std::endl;
+    MonteCarlo mc_untuned(cascade, pulse, cfg);
+    auto res_untuned = mc_untuned.run(50000);
+    res_untuned.print_summary();
 
-    // 4. Run
-    MonteCarlo mc(ring, n, pulse, config);
-    MonteCarlo::Result results =
-        mc.run(30000); // 30k FFT points to keep 500 trials quick
+    // SCENARIO B: Sintonizzazione termica attiva (Tuned)
+    cfg.enable_thermal_tuning = true;
+    cfg.sigma_df_tuned =
+        0.05e9; // Errore residuo del feedback di bloccaggio: 50 MHz
+    std::cout
+        << "--> Esecuzione Monte Carlo TUNED (con micro-riscaldatore attivo)..."
+        << std::endl;
+    MonteCarlo mc_tuned(cascade, pulse, cfg);
+    auto res_tuned = mc_tuned.run(50000);
+    res_tuned.print_summary();
 
-    // 5. Report
-    results.print_summary();
-
-    // 6. Figures
-    Plotter::plot_all(nominal_sim,
-                      false); // nominal figures: input, time, spectrum
-    // TODO: implement this function
-    // Plotter::plot_monte_carlo(results, config.yield_threshold *
-    // 100.0); // yield histogram
+    // Grafico dell'istogramma statistico della resa
+    Plotter::plot_monte_carlo(res_tuned, cfg.yield_threshold * 100.0);
     Plotter::show();
 
     return 0;
