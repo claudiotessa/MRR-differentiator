@@ -8,6 +8,7 @@
 #include "MonteCarlo.hpp"
 #include "Plotter.hpp"
 #include "Simulation.hpp"
+#include <optional>
 
 // Reference device: the theory-guided design of [LIU25] Sec. 2, via
 // Fabrication.hpp. The tolerances were derived on this geometry, so changing
@@ -17,73 +18,148 @@ static const double xi = fab::paper::xi;       // 0.9428, set by bend loss
 static const double n_eff = fab::paper::n_eff; // 2.25
 static const double n_g = fab::paper::n_g;     // 4.05, Lumerical
 
-int main() {
-    // =========================================================================
-    // 1. BENCHMARK ON THE PAPER'S ORDERS
-    // =========================================================================
-    // Each case is driven with the pulse [LIU25] actually used, not one
-    // matched to the cascade: the input is part of what is being reproduced.
-    struct Case {
-        double n;
-        double T0;      // input half-width [s], as stated by [LIU25]
-        double D_paper; // the error [LIU25] reports
-    };
-    const std::vector<Case> paper_cases = {
-        {0.54, fab::paper::input_T0, fab::paper::D_054_fdtd},
-        {1.44, fab::paper::input_T0_144, fab::paper::D_144_fdtd},
-        {2.10, fab::paper::input_T0_210, fab::paper::D_210_fdtd}};
+struct CliArgs {
+    double n = -1.0;
+    double t0_ps = -1.0;
+    bool custom_t0 = false;
+};
 
-    std::cout << "================================================="
-                 "==================\n"
-                 "              BENCHMARK AGAINST THE CASES OF [LIU25]"
-                 "\n"
-                 "================================================="
-                 "==================\n";
-    std::cout << std::left << std::setw(9) << "Order n" << std::setw(7)
-              << "Rings" << std::setw(11) << "n per ring" << std::setw(12)
-              << "Band [GHz]" << std::setw(11) << "T0 [ps]" << std::setw(11)
-              << "D_n [%]" << std::setw(11) << "[LIU25]" << "\n";
-    std::cout << "-------------------------------------------------"
-                 "------------------\n";
+void print_usage(const char *prog_name) {
+    std::cout << "Uso: " << prog_name << " -n <ordine> [-t <T0_in_ps>] [-h]\n\n"
+              << "Opzioni:\n"
+              << "  -n, --order <valore>    Ordine di derivazione "
+                 "(obbligatorio, n > 0)\n"
+              << "  -t, -T0, --pulse <ps>   Durata T0 impulso gaussiano in ps "
+                 "(opzionale)\n"
+              << "  -h, --help              Mostra questa guida\n\n"
+              << "Esempi:\n"
+              << "  " << prog_name << " -n 1.44\n"
+              << "  " << prog_name << " -n 0.54 -t 3.0\n";
+}
 
-    for (const Case &c : paper_cases) {
-        MRRCascade casc(c.n, R_ring, xi, n_eff, n_g);
-        Simulation::Input in = Simulation::Input::gaussian(c.T0);
+std::optional<CliArgs> parse_flags(int argc, char *argv[]) {
+    CliArgs args;
 
-        Simulation sim(casc);
-        const auto &res = sim.run(in, false, false); // silent
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
 
-        std::cout << std::left << std::fixed << std::setprecision(2)
-                  << std::setw(9) << c.n << std::setw(7) << casc.num_stages()
-                  << std::setw(11) << casc.stage_order() << std::setprecision(1)
-                  << std::setw(12) << casc.usable_band() / 1e9 << std::setw(11)
-                  << c.T0 * 1e12 << std::setprecision(2) << std::setw(11)
-                  << res.error_Dn * 100.0 << std::setw(11) << c.D_paper * 100.0
-                  << "\n";
+        if (arg == "-h" || arg == "--help") {
+            print_usage(argv[0]);
+            return std::nullopt;
+        } else if (arg == "-n" || arg == "--order") {
+            if (i + 1 < argc) {
+                try {
+                    args.n = std::stod(argv[++i]);
+                } catch (const std::exception &) {
+                    std::cerr << "Errore: valore non valido per -n ('"
+                              << argv[i] << "')\n";
+                    return std::nullopt;
+                }
+            } else {
+                std::cerr << "Errore: flag " << arg
+                          << " senza valore associato.\n";
+                return std::nullopt;
+            }
+        } else if (arg == "-t" || arg == "-T0" || arg == "--pulse") {
+            if (i + 1 < argc) {
+                try {
+                    args.t0_ps = std::stod(argv[++i]);
+                    args.custom_t0 = true;
+                } catch (const std::exception &) {
+                    std::cerr << "Errore: valore non valido per -t ('"
+                              << argv[i] << "')\n";
+                    return std::nullopt;
+                }
+            } else {
+                std::cerr << "Errore: flag " << arg
+                          << " richiede un valore in ps.\n";
+                return std::nullopt;
+            }
+        } else {
+            std::cerr << "Attenzione: opzione non riconosciuta '" << arg
+                      << "'\n";
+        }
     }
-    std::cout << "================================================="
-                 "==================\n";
-    std::cout << "Driven with the pulse [LIU25] states for each case.\n"
-                 "[LIU25] column is their FDTD result.\n"
-                 "Their theory-only figure for n = 0.54 is "
-              << std::setprecision(1) << fab::paper::D_054_theory * 100.0
-              << " %.\n\n";
 
-    // =========================================================================
-    // 2. DETAILED NOMINAL SIMULATION
-    // =========================================================================
-    const double target_n = 1.44;
+    if (args.n <= 0.0) {
+        std::cerr << "Errore: ordine n mancante o non positivo.\n\n";
+        print_usage(argv[0]);
+        return std::nullopt;
+    }
+
+    return args;
+}
+
+int main(int argc, char *argv[]) {
+    auto args = parse_flags(argc, argv);
+    if (!args) {
+        return 1;
+    }
+
+    std::cout << "=========================================================\n";
+    std::cout << " SIMULAZIONE DIFFERENZIATORE OTTICO FRAZIONARIO (IDEALE) \n";
+    std::cout << "=========================================================\n";
+
+    MRRCascade cascade(args->n, R_ring, xi, n_eff, n_g);
+
+    Simulation::Input in;
+    if (args->custom_t0) {
+        in = Simulation::Input::gaussian(args->t0_ps * 1e-12);
+    } else {
+        if (std::abs(args->n - 0.54) < 1e-3) {
+            in = Simulation::Input::gaussian(fab::paper::input_T0); // 3 ps
+        } else if (std::abs(args->n - 1.44) < 1e-3 ||
+                   std::abs(args->n - 2.10) < 1e-3) {
+            in = Simulation::Input::gaussian(fab::paper::input_T0_144); // 7 ps
+        } else {
+            in = Simulation::Input::gaussian_matched(cascade);
+        }
+    }
+
+    std::cout << "\n--- Dispositivo Ottico (MRRCascade) ---\n"
+              << "Ordine totale (n)        : " << std::fixed
+              << std::setprecision(4) << cascade.order() << "\n"
+              << "Numero stadi (N)         : " << cascade.num_stages() << "\n"
+              << "Ordine per stadio (n_i)  : " << cascade.stage_order() << "\n"
+              << "Autocoppiamento (r)      : " << cascade.stage_self_coupling()
+              << "\n"
+              << "Perdite giro (xi)        : " << cascade.round_trip_loss()
+              << "\n"
+              << "Banda utile aggregata    : " << cascade.usable_band() / 1e9
+              << " GHz\n";
+
+    std::cout << "\n--- Segnale d'Ingresso ---\n"
+              << "Impulso                  : " << in.describe() << "\n";
+
+    // Simulazione e verifica errore Dn
+    Simulation sim(cascade);
+    const auto &res = sim.run(in, true, false);
+
+    std::cout << "\n--- Risultati di Propagazione ---\n"
+              << "Ritardo di gruppo (lag)  : " << std::fixed
+              << std::setprecision(2) << res.lag_ps << " ps\n"
+              << "Errore di derivata (Dn)  : \033[1;32m" << res.error_Dn * 100.0
+              << " %\033[0m\n";
+
+    //  Visualizzazione
+    Plotter::plot_all(sim, true);
+
+    std::cout << "=========================================================\n";
+    std::cout << " SIMULAZIONE MONTE CARLO \n";
+    std::cout << "=========================================================\n";
+
+    // === MONTE CARLO ===
+    const double target_n = args->n;
     std::cout << ">>> Nominal simulation for n = " << std::setprecision(2)
               << target_n << " ...\n";
 
-    MRRCascade cascade(target_n, R_ring, xi, n_eff, n_g);
     // The paper's own input for this device: 3 ps for a single ring (Sec. 2),
     // 7 ps once it is a cascade (Sec. 3.B). Keyed off the order so that
     // retargeting target_n does not silently leave the wrong pulse behind.
     Simulation::Input pulse = Simulation::Input::gaussian(
-        target_n <= 1.0   ? fab::paper::input_T0
-        : target_n < 2.0  ? fab::paper::input_T0_144
-                          : fab::paper::input_T0_210);
+        target_n <= 1.0  ? fab::paper::input_T0
+        : target_n < 2.0 ? fab::paper::input_T0_144
+                         : fab::paper::input_T0_210);
 
     Simulation nominal_sim(cascade);
     nominal_sim.print_setup(pulse);
@@ -94,7 +170,7 @@ int main() {
     std::cout << "Nominal result: " << nominal_res.caption << "\n\n";
 
     // =========================================================================
-    // 3. MONTE CARLO TOLERANCE ANALYSIS OF THE DESIGNED DEVICE
+    // MONTE CARLO TOLERANCE ANALYSIS OF THE DESIGNED DEVICE
     // =========================================================================
     std::cout << ">>> Starting Monte Carlo tolerance analysis..." << std::endl;
 
@@ -126,11 +202,11 @@ int main() {
     mc_res.print_summary();
 
     // =========================================================================
-    // 4. FIGURES
+    // FIGURES
     // =========================================================================
     std::cout << ">>> Opening figures (close the windows to finish)..."
               << std::endl;
-    Plotter::plot_all(nominal_sim, false); // waveforms and dB/phase spectrum
+    // Plotter::plot_all(nominal_sim, false); // waveforms and dB/phase spectrum
     Plotter::plot_monte_carlo(mc_res, mc_cfg.yield_threshold * 100.0);
     Plotter::show();
 
