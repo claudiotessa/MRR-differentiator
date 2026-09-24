@@ -74,7 +74,7 @@ class Simulation {
     };
 
     // @brief Binds the simulation to a ring and a target order.
-    Simulation(const MRR &ring, double n, long N = 100000)
+    Simulation(const MRR &ring, double n, long N = 131072)
         : ring(ring), n(n), N(N), has_result(false) {}
 
     // Getters
@@ -115,18 +115,31 @@ class Simulation {
     bool has_result = false;
     bool verbose = true;
 
-    // @brief Moves the zero frequency to the centre of the array
+    /// Rotates `vec` left by `mid`, the one operation both shifts need.
     template <typename Derived>
-    static auto fftshift(const Eigen::DenseBase<Derived> &vec) {
+    static auto rotate_left(const Eigen::DenseBase<Derived> &vec,
+                            Eigen::Index mid) {
         using Scalar = typename Derived::Scalar;
         Eigen::Matrix<Scalar, Derived::RowsAtCompileTime,
                       Derived::ColsAtCompileTime>
             out(vec.rows(), vec.cols());
-        Eigen::Index n = vec.size();
-        Eigen::Index mid = (n + 1) / 2;
+        const Eigen::Index n = vec.size();
         out.head(n - mid) = vec.tail(n - mid);
         out.tail(mid) = vec.head(mid);
         return out;
+    }
+
+    // @brief Moves the zero frequency to the centre of the array
+    template <typename Derived>
+    static auto fftshift(const Eigen::DenseBase<Derived> &vec) {
+        return rotate_left(vec, (vec.size() + 1) / 2);
+    }
+
+    /// Undoes fftshift. Not the same rotation for odd N: fftshift moves DC to
+    /// floor(N/2), and only the even case is its own inverse.
+    template <typename Derived>
+    static auto ifftshift(const Eigen::DenseBase<Derived> &vec) {
+        return rotate_left(vec, vec.size() / 2);
     }
 
     // @brief Lag in samples that best aligns `a` onto `b`

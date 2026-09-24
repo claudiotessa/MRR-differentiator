@@ -66,18 +66,17 @@ int main() {
     // 4. Run
     MonteCarlo mc(ring, n, pulse, config);
     MonteCarlo::Result results =
-        mc.run(30000); // 30k FFT points to keep 500 trials quick
+        mc.run(32768); // power of two: kissfft is slowest on odd factors
 
     // 5. Report
     results.print_summary();
 
-    // 6. Figures
-    Plotter::plot_all(nominal_sim,
-                      false); // nominal figures: input, time, spectrum
-    // TODO: implement this function
-    // Plotter::plot_monte_carlo(results, config.yield_threshold *
-    // 100.0); // yield histogram
-    Plotter::show();
+    // 6. Figures, straight to fig/ under the names the slides expect
+    Plotter::plot_time_domain(nominal_sim.get_last_result());
+    Plotter::save("time-n054");
+    Plotter::plot_frequency_response(ring, n);
+    Plotter::save("freq-n054");
+    // TODO: mc-scatter, mc-hist from `results`
 
     return 0;
 }

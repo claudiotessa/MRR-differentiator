@@ -4,6 +4,8 @@
 #include "MRR.hpp"
 #include "Simulation.hpp"
 
+#include <string>
+
 class Plotter {
   public:
     // The three time-domain subplots, from data already computed.
@@ -15,6 +17,14 @@ class Plotter {
 
     // Show all figures
     static void show();
+
+    // --- Figure files -----------------------------------------------------
+    /// Where save() writes, created if missing. Defaults to "fig".
+    static void set_output_dir(const std::string &dir);
+
+    /// Writes the current figure to <dir>/<stem>.pdf and closes it, so the
+    /// next plot call starts clean. Vector output: it is going into a slide.
+    static void save(const std::string &stem);
 
     static void plot_all(const Simulation::Propagation &p, const MRR &ring,
                          double n, bool show_immediately = true);

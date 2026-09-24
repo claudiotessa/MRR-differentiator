@@ -16,6 +16,7 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     res.neff_samples.reserve(config.trials);
     res.ng_samples.reserve(config.trials);
     res.df_samples.reserve(config.trials);
+    res.n_samples.reserve(config.trials);
 
     if (config.trials <= 0)
         return res;
@@ -89,6 +90,7 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
         res.neff_samples.push_back(neff_sim);
         res.ng_samples.push_back(ng_sim);
         res.df_samples.push_back(df_sim / 1e9);
+        res.n_samples.push_back(perturbed_ring.order());
 
         if (err_pct <= (config.yield_threshold * 100.0)) {
             passed_count++;
@@ -116,6 +118,15 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     }
     res.std_error = std::sqrt(sq_sum / config.trials);
 
+    // The order the process actually delivered. Over-coupled draws would be
+    // NaN, but enforce_under_coupled has already rejected them.
+    double n_sum = std::accumulate(res.n_samples.begin(), res.n_samples.end(), 0.0);
+    res.mean_n = n_sum / config.trials;
+    double n_sq = 0.0;
+    for (double v : res.n_samples)
+        n_sq += (v - res.mean_n) * (v - res.mean_n);
+    res.std_n = std::sqrt(n_sq / config.trials);
+
     std::vector<double> sorted_err = res.errors_Dn;
     std::sort(sorted_err.begin(), sorted_err.end());
     res.median_error = sorted_err[config.trials / 2];
@@ -136,6 +147,7 @@ void MonteCarlo::Result::print_summary() const {
     std::printf("Std deviation : %.2f %%\n", std_error);
     std::printf("Median Dn     : %.2f %%\n", median_error);
     std::printf("Worst Dn      : %.2f %%\n", max_error);
+    std::printf("Achieved n    : %.4f +/- %.4f\n", mean_n, std_n);
     if (redraws > 0)
         std::printf("Redrawn       : %ld (r <= xi)\n", redraws);
     std::printf("============================================\n\n");

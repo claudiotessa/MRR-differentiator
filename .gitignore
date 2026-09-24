@@ -10,3 +10,6 @@ docs/
 
 # if we wanted to ignore the include as well
 # include
+
+# generated figures
+fig/

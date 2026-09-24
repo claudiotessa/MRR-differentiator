@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <complex>
 #include <stdexcept>
 #include <string>
@@ -127,6 +128,31 @@ class MRR {
                                                  double lambda0 = 1.55e-6) {
         return -c * dlambda / (lambda0 * lambda0);
     }
+
+    // --- Achieved order ------------------------------
+    /**
+     * @brief Eq. (2) read forwards: the order a device with this (`r`, `xi`)
+     *        actually realises, n = (2/pi)*atan[xi(1-r^2)/sqrt(D)] with
+     *        D = (r^2-xi^2)(1-r^2 xi^2).
+     *
+     * fractional_order() solves this for `r` given a target `n`; this is the
+     * other direction, for a ring that came out of the process rather than off
+     * the mask. Returns 1 at critical coupling and NaN when over-coupled
+     * (r < xi), where Eq. (2) has no real solution and the device is a
+     * different one, not a worse one.
+     */
+    static double order_of(double r, double xi) {
+        const double d = (r * r - xi * xi) * (1.0 - r * r * xi * xi);
+        if (d < 0.0)
+            return std::numeric_limits<double>::quiet_NaN();
+        if (d == 0.0)
+            return 1.0; // atan(inf)
+        return (2.0 / M_PI) *
+               std::atan(xi * (1.0 - r * r) / std::sqrt(d));
+    }
+
+    /// The order this ring realises, see order_of().
+    double order() const { return order_of(r, xi); }
 
     /// Finesse = FSR / FWHM, from the Airy linewidth of Eq. (1).
     double finesse() const { return M_PI * std::sqrt(r * xi) / (1.0 - r * xi); }

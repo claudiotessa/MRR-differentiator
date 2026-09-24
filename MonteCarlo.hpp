@@ -53,12 +53,15 @@ class MonteCarlo {
         std::vector<double> neff_samples;
         std::vector<double> ng_samples;
         std::vector<double> df_samples; // [GHz]
+        std::vector<double> n_samples;  // order actually realised, MRR::order()
 
         double mean_error = 0.0;
         double std_error = 0.0;
         double median_error = 0.0;
         double max_error = 0.0;
         double yield_rate = 0.0; // percentage with D_n <= threshold
+        double mean_n = 0.0;     // achieved order, against the target n
+        double std_n = 0.0;
         long redraws = 0;        // draws rejected for r <= xi
 
         void print_summary() const;
@@ -75,7 +78,7 @@ class MonteCarlo {
         : nominal_ring(nominal_ring), n(n), pulse(pulse), config(config) {}
 
     /// Draws and evaluates every device.
-    Result run(long sim_samples = 50000) const;
+    Result run(long sim_samples = 65536) const;
 
   private:
     MRR nominal_ring; // the device as drawn

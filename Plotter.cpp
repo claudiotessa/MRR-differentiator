@@ -3,6 +3,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 
@@ -45,6 +46,24 @@ Eigen::ArrayXd Plotter::to_dB(const Eigen::ArrayXd &mag,
 }
 
 void Plotter::show() { plt::show(); }
+
+// =========================================================================
+// FIGURE FILES
+// =========================================================================
+
+namespace {
+std::string g_out_dir = "fig";
+}
+
+void Plotter::set_output_dir(const std::string &dir) { g_out_dir = dir; }
+
+void Plotter::save(const std::string &stem) {
+    std::filesystem::create_directories(g_out_dir);
+    const std::string path = (std::filesystem::path(g_out_dir) / (stem + ".pdf")).string();
+    plt::save(path);
+    plt::close();
+    std::printf("wrote %s\n", path.c_str());
+}
 
 // =========================================================================
 // TIME-DOMAIN FIGURES
