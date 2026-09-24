@@ -6,6 +6,29 @@
 #include <iostream>
 #include <numeric>
 #include <random>
+#include <stdexcept>
+#include <vector>
+
+namespace {
+
+/// One-line completion bar, redrawn in place. Only every percent, so a long
+/// run does not spend its time writing to the terminal.
+void progress_bar(int done, int total) {
+    const int width = 32;
+    if (done < total && total > width &&
+        done % std::max(1, total / 100) != 0)
+        return;
+
+    const double frac = static_cast<double>(done) / total;
+    const int filled = static_cast<int>(frac * width);
+    std::printf("\r  [");
+    for (int i = 0; i < width; ++i)
+        std::putchar(i < filled ? '#' : '.');
+    std::printf("] %3.0f%%  %d/%d", frac * 100.0, done, total);
+    std::fflush(stdout);
+}
+
+} // namespace
 
 MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     Result res;
@@ -20,72 +43,109 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     res.dheight_samples.reserve(config.trials);
     res.dradius_samples.reserve(config.trials);
 
-    std::random_device rd;
-    std::mt19937_64 rng(rd());
+    std::mt19937_64 rng(config.seed);
 
-    // Errori geometrici (a media zero)
-    std::normal_distribution<double> dist_w(0.0, config.sigma_width);
-    std::normal_distribution<double> dist_h(0.0, config.sigma_height);
-    std::normal_distribution<double> dist_R(0.0, config.sigma_radius);
+    // Tutte le estrazioni passano da una normale standard: le sigma entrano
+    // dopo, insieme alla correlazione anello-anello.
+    std::normal_distribution<double> zn(0.0, 1.0);
 
-    // Parametri ottici centrati sulla cascata nominale
-    std::normal_distribution<double> dist_r(nominal_cascade.self_coupling(),
-                                            config.sigma_r);
-    std::normal_distribution<double> dist_xi(nominal_cascade.round_trip_loss(),
-                                             config.sigma_xi);
-    std::normal_distribution<double> dist_neff(nominal_cascade.mode_index(),
-                                               config.sigma_neff);
-    std::normal_distribution<double> dist_ng(nominal_cascade.group_index(),
-                                             config.sigma_ng);
-    std::normal_distribution<double> dist_df_tuned(0.0, config.sigma_df_tuned);
+    // [LU17]: gli anelli di una cascata distano decine di um, ben dentro la
+    // lunghezza di correlazione millimetrica, quindi condividono quasi tutto
+    // l'errore geometrico. x_i = sigma * (sqrt(rho)*z_comune + sqrt(1-rho)*z_i)
+    const size_t S = std::max<size_t>(1, nominal_cascade.num_stages());
+    const double rho =
+        std::clamp(fab::layout::rho(config.ring_pitch, config.corr_length),
+                   0.0, 1.0);
+    const double w_com = std::sqrt(rho);       // peso della quota comune
+    const double w_ind = std::sqrt(1.0 - rho); // peso del residuo per anello
 
     const double c = 2.99792458e8;
     const double f0 = c / config.lambda_0;
 
+    const double r_nom = nominal_cascade.self_coupling();
+    const double xi_nom = nominal_cascade.round_trip_loss();
+    const double neff_nom = nominal_cascade.mode_index();
+    const double ng_nom = nominal_cascade.group_index();
+    const double R_nom = nominal_cascade.radius();
+
+    res.rho_rings = rho;
+    res.stages = S;
+
     int passed_count = 0;
 
     if (config.verbose) {
-        std::cout << "\n=== Monte Carlo (" << config.trials << " trials, "
-                  << (config.correlated ? "correlated geometry" : "independent")
-                  << ") ===" << std::endl;
+        std::printf("\n=== Monte Carlo: %d trials, %zu ring%s, %s, "
+                    "rho(ring-ring) = %.4f ===\n",
+                    config.trials, S, S == 1 ? "" : "s",
+                    config.correlated ? "correlated geometry" : "independent",
+                    rho);
     }
 
+    std::vector<MRRCascade::StageParams> sp(S);
+
     for (int i = 0; i < config.trials; ++i) {
-        double r_sim = 0.0, xi_sim = 0.0, neff_sim = 0.0, ng_sim = 0.0;
-        double R_sim = nominal_cascade.radius();
-        double dw = 0.0, dh = 0.0, dR = 0.0;
+        double dw_avg = 0.0, dh_avg = 0.0, dR_avg = 0.0;
 
         for (int attempt = 0;; ++attempt) {
-            if (config.correlated) {
-                dw = dist_w(rng);
-                dh = dist_h(rng);
-                dR = dist_R(rng);
+            // Quota comune a tutto il chip, estratta una volta per device.
+            const double zw = zn(rng), zh = zn(rng), zR = zn(rng);
+            const double zr = zn(rng), zx = zn(rng), zne = zn(rng),
+                         zng = zn(rng);
+            auto shared = [&](double z) { return w_com * z + w_ind * zn(rng); };
 
-                // Allargando la guida (+dw) il gap si riduce, aumentando
-                // l'accoppiamento (r cala)
-                r_sim = nominal_cascade.self_coupling() -
-                        fab::sensitivity::dr_dgap * dw;
-                neff_sim = nominal_cascade.mode_index() +
-                           fab::sensitivity::dneff_dwidth * dw +
-                           fab::sensitivity::dneff_dheight * dh;
-                xi_sim = nominal_cascade.round_trip_loss() +
-                         fab::sensitivity::dxi_dradius * dR +
-                         config.dxi_dwidth * dw;
-                ng_sim = nominal_cascade.group_index() + config.dng_dwidth * dw;
-                R_sim = nominal_cascade.radius() + dR;
-            } else {
-                r_sim = dist_r(rng);
-                xi_sim = dist_xi(rng);
-                neff_sim = dist_neff(rng);
-                ng_sim = dist_ng(rng);
-                R_sim = nominal_cascade.radius();
+            bool ok = true;
+            dw_avg = dh_avg = dR_avg = 0.0;
+
+            for (size_t k = 0; k < S; ++k) {
+                MRRCascade::StageParams &p = sp[k];
+                double dw = 0.0, dh = 0.0, dR = 0.0;
+
+                if (config.correlated) {
+                    dw = config.sigma_width * shared(zw);
+                    dh = config.sigma_height * shared(zh);
+                    dR = config.sigma_radius * shared(zR);
+
+                    // Allargando la guida (+dw) il gap si chiude e
+                    // l'accoppiamento cresce: r cala.
+                    p.r = r_nom - fab::sensitivity::dr_dgap * dw;
+                    p.n_eff = neff_nom + fab::sensitivity::dneff_dwidth * dw +
+                              fab::sensitivity::dneff_dheight * dh;
+                    p.xi = xi_nom + fab::sensitivity::dxi_dradius * dR +
+                           config.dxi_dwidth * dw;
+                    p.n_g = ng_nom + config.dng_dwidth * dw;
+                    p.R = R_nom + dR;
+                } else {
+                    p.r = r_nom + config.sigma_r * shared(zr);
+                    p.xi = xi_nom + config.sigma_xi * shared(zx);
+                    p.n_eff = neff_nom + config.sigma_neff * shared(zne);
+                    p.n_g = ng_nom + config.sigma_ng * shared(zng);
+                    p.R = R_nom;
+                }
+
+                p.r = std::clamp(p.r, 0.5, 0.9999);
+                p.xi = std::clamp(p.xi, 0.5, 0.9999);
+                p.n_g = std::max(1.5, p.n_g);
+
+                // Ogni anello ha il suo heater, quindi il residuo di aggancio
+                // e' indipendente; senza heater il detuning segue n_eff ed e'
+                // correlato quanto la geometria.
+                p.df = config.enable_thermal_tuning
+                           ? config.sigma_df_tuned * zn(rng)
+                           : -f0 * (p.n_eff - neff_nom) / p.n_g;
+
+                dw_avg += dw;
+                dh_avg += dh;
+                dR_avg += dR;
+
+                if (config.enforce_under_coupled && !(p.r > p.xi))
+                    ok = false;
             }
 
-            r_sim = std::clamp(r_sim, 0.5, 0.9999);
-            xi_sim = std::clamp(xi_sim, 0.5, 0.9999);
-            ng_sim = std::max(1.5, ng_sim);
+            dw_avg /= static_cast<double>(S);
+            dh_avg /= static_cast<double>(S);
+            dR_avg /= static_cast<double>(S);
 
-            if (!config.enforce_under_coupled || r_sim > xi_sim)
+            if (ok)
                 break;
 
             ++res.redraws;
@@ -96,43 +156,35 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
             }
         }
 
-        // Calcolo del detuning da disallineamento frequenziale
-        double df_sim = 0.0;
-        if (config.enable_thermal_tuning) {
-            df_sim = dist_df_tuned(rng);
-        } else {
-            double delta_neff = neff_sim - nominal_cascade.mode_index();
-            df_sim = -f0 * (delta_neff / ng_sim);
-        }
+        MRRCascade perturbed = MRRCascade::perturbed(nominal_cascade, sp);
 
-        // Istanziazione della cascata perturbata (incluso il raggio perturbato
-        // R_sim)
-        MRRCascade perturbed = MRRCascade::perturbed(
-            nominal_cascade, r_sim, xi_sim, neff_sim, ng_sim, df_sim, R_sim);
-
-        // Simulazione numerica silente
         Simulation sim(perturbed, sim_samples);
         const auto &prop = sim.run(pulse, config.align_waveforms, false);
 
         double err_pct = prop.error_Dn * 100.0;
         res.errors_Dn.push_back(err_pct);
-        res.r_samples.push_back(r_sim);
-        res.xi_samples.push_back(xi_sim);
-        res.neff_samples.push_back(neff_sim);
-        res.ng_samples.push_back(ng_sim);
-        res.df_samples.push_back(df_sim / 1e9);
+        res.r_samples.push_back(perturbed.self_coupling());
+        res.xi_samples.push_back(perturbed.round_trip_loss());
+        res.neff_samples.push_back(perturbed.mode_index());
+        res.ng_samples.push_back(perturbed.group_index());
+        res.df_samples.push_back(perturbed.resonance_offset() / 1e9);
         res.n_samples.push_back(perturbed.achieved_order());
 
         if (config.correlated) {
-            res.dwidth_samples.push_back(dw);
-            res.dheight_samples.push_back(dh);
-            res.dradius_samples.push_back(dR);
+            res.dwidth_samples.push_back(dw_avg);
+            res.dheight_samples.push_back(dh_avg);
+            res.dradius_samples.push_back(dR_avg);
         }
 
         if (err_pct <= (config.yield_threshold * 100.0)) {
             passed_count++;
         }
+
+        if (config.verbose)
+            progress_bar(i + 1, config.trials);
     }
+    if (config.verbose)
+        std::printf("\n");
 
     // Statistiche sull'errore Dn
     double sum =
@@ -176,6 +228,10 @@ void MonteCarlo::Result::print_summary() const {
     std::printf("Median Dn     : %.2f %%\n", median_error);
     std::printf("Worst Dn      : %.2f %%\n", max_error);
     std::printf("Achieved n    : %.4f +/- %.4f\n", mean_n, std_n);
+    if (stages > 1) {
+        std::printf("Rings         : %zu, rho(ring-ring) = %.4f\n", stages,
+                    rho_rings);
+    }
     if (redraws > 0) {
         std::printf("Redrawn       : %ld (r <= xi)\n", redraws);
     }

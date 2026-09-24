@@ -1,5 +1,7 @@
 #include "MRRCascade.hpp"
 
+#include <vector>
+
 #include <cmath>
 #include <cstdio>
 #include <sstream>
@@ -28,35 +30,83 @@ MRRCascade::MRRCascade(double n, double R, double xi, double n_eff, double n_g,
     }
 }
 
-MRRCascade MRRCascade::perturbed(const MRRCascade &nominal, double r, double xi,
-                                 double n_eff, double n_g, double df,
-                                 double R_custom) {
+MRRCascade
+MRRCascade::perturbed(const MRRCascade &nominal,
+                      const std::vector<StageParams> &stage_params) {
+    if (stage_params.size() != nominal.stages.size())
+        throw std::invalid_argument(
+            "MRRCascade::perturbed: un set di parametri per ogni stadio");
+
     MRRCascade casc;
     casc.total_order = nominal.total_order;
-    casc.R = (R_custom > 0.0) ? R_custom : nominal.R;
-    casc.xi = xi;
-    casc.n_eff = n_eff;
-    casc.n_g = n_g;
-    casc.df = df;
-
-    casc.stages.reserve(nominal.stages.size());
-    for (size_t i = 0; i < nominal.stages.size(); ++i) {
-        casc.stages.emplace_back(casc.R, r, xi, n_eff, n_g, df);
+    casc.stages.reserve(stage_params.size());
+    for (const StageParams &p : stage_params) {
+        casc.stages.emplace_back(p.R, p.r, p.xi, p.n_eff, p.n_g, p.df);
+        casc.R += p.R;
+        casc.xi += p.xi;
+        casc.n_eff += p.n_eff;
+        casc.n_g += p.n_g;
+        casc.df += p.df;
     }
+    const double N = static_cast<double>(stage_params.size());
+    casc.R /= N;
+    casc.xi /= N;
+    casc.n_eff /= N;
+    casc.n_g /= N;
+    casc.df /= N;
     return casc;
 }
 
-double MRRCascade::usable_band() const {
+MRRCascade MRRCascade::perturbed(const MRRCascade &nominal, double r, double xi,
+                                 double n_eff, double n_g, double df,
+                                 double R_custom) {
+    const double R = (R_custom > 0.0) ? R_custom : nominal.R;
+    return perturbed(nominal, std::vector<StageParams>(nominal.stages.size(),
+                                                       {R, r, xi, n_eff, n_g,
+                                                        df}));
+}
+
+double MRRCascade::usable_band(double tol_dB) const {
     if (stages.empty())
         return 0.0;
-    double b0 = stages[0].usable_band();
-    if (stages.size() == 1)
-        return b0;
 
-    // Con N anelli identici in serie, la larghezza a 3 dB scala come
-    // sqrt(2^(1/N) - 1)
-    double N = static_cast<double>(stages.size());
-    return b0 * std::sqrt(std::pow(2.0, 1.0 / N) - 1.0);
+    const double fsr = 1.0 / stages[0].round_trip_time();
+    // Ancora ben dentro la risonanza del singolo anello, dove la legge di
+    // potenza vale di sicuro; fissa la costante C del confronto.
+    const double f_ref = stages[0].usable_band() / 4.0;
+
+    const int M = 4000;
+    const double f_lo = fsr * 1e-5, f_hi = fsr * 0.5;
+    const double step = std::pow(f_hi / f_lo, 1.0 / (M - 1));
+
+    Eigen::ArrayXd f(M);
+    for (int i = 0; i < M; ++i)
+        f(i) = f_lo * std::pow(step, i);
+    const Eigen::ArrayXd mag = compute_H(f).abs();
+
+    // Legge di potenza ideale, normalizzata su f_ref
+    int k_ref = 0;
+    for (int i = 1; i < M; ++i)
+        if (std::abs(f(i) - f_ref) < std::abs(f(k_ref) - f_ref))
+            k_ref = i;
+    const double C = mag(k_ref) / std::pow(2.0 * M_PI * f(k_ref), total_order);
+
+    auto within = [&](int i) {
+        const double ideal = C * std::pow(2.0 * M_PI * f(i), total_order);
+        if (!(ideal > 0.0) || !(mag(i) > 0.0))
+            return false;
+        return std::abs(20.0 * std::log10(mag(i) / ideal)) <= tol_dB;
+    };
+
+    if (!within(k_ref))
+        return stages[0].usable_band(); // niente da misurare, ripiega
+
+    int lo = k_ref, hi = k_ref;
+    while (lo > 0 && within(lo - 1))
+        --lo;
+    while (hi < M - 1 && within(hi + 1))
+        ++hi;
+    return f(hi) - f(lo);
 }
 
 std::string MRRCascade::description() const {

@@ -165,10 +165,12 @@ class MRR {
     double fwhm() const { return fsr() / finesse(); }
 
     /**
-     * @brief The differentiator's usable band [Hz]: the input spectrum has to
-     * fit inside it.
+     * @brief Resonance width [Hz], the standard *power* FWHM.
      *
-     * Note this is the standard *power* FWHM.
+     * Do not size a pulse against this directly: a pulse width is quoted on
+     * the amplitude spectrum, and mixing the two conventions costs a factor
+     * of order sqrt(2). MRRCascade::usable_band() is the amplitude-domain
+     * band that Simulation::Input::gaussian_matched() expects.
      */
     double usable_band() const { return fwhm(); }
 

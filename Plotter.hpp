@@ -12,7 +12,7 @@ class Plotter {
     static void plot_input_signal(const Simulation::Propagation &p);
     static void plot_time_domain(const Simulation::Propagation &p);
     static void plot_frequency_response(const MRRCascade &cascade,
-                                        long N = 100000);
+                                        long N = 131072);
     static void show(); // Show all previously built figures
 
     static void plot_all(const Simulation::Propagation &p,

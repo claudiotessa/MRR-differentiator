@@ -70,7 +70,7 @@ class Simulation {
         std::string input_label;       // the input's legend label
     };
 
-    Simulation(const MRRCascade &cascade, long N = 100000)
+    Simulation(const MRRCascade &cascade, long N = 131072)
         : cascade(cascade), n(cascade.order()), N(N), has_result(false) {}
     // Getters
     const MRRCascade &get_cascade() const { return cascade; }
@@ -88,13 +88,9 @@ class Simulation {
     /**
      * @brief Eq. (3): D_n = int | |f_n|^2 - |g_n|^2 | dt / int |g_n|^2 dt,
      *        with `out` = |f_n|^2 (ring) and `ideal` = |g_n|^2.
-<<<<<<< HEAD
-=======
      *
      * Relative, so dt cancels and the sums stand in for the integrals. Both
-     * waveforms must be peak-normalised and overlapped in time: the ring is
-     * lossy and answers a ringdown late, and neither is shape error.
->>>>>>> refs/remotes/origin/main
+     * waveforms must be peak-normalised and overlapped in time.
      */
     static double power_error(const Eigen::ArrayXd &out,
                               const Eigen::ArrayXd &ideal);

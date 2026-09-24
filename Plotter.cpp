@@ -4,6 +4,7 @@
 #include <complex>
 #include <cstdio>
 #include <filesystem>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -35,10 +36,31 @@ void Plotter::finish_axes(const std::string &xlabel,
 
 Eigen::ArrayXd Plotter::to_dB(const Eigen::ArrayXd &mag,
                               const Eigen::ArrayXd &freq_hz, double f_ref) {
-    Eigen::Index i;
-    ((freq_hz.abs() - std::abs(f_ref)).abs()).minCoeff(&i);
-    const double ref = (mag(i) > 1e-300) ? mag(i) : mag.maxCoeff();
-    return 20.0 * (mag / ref).log10();
+    // |2*pi*f|^n has units of s^-n, so ring and ideal only compare once both
+    // are pinned to 0 dB at the same frequency. Anchor on +f_ref explicitly:
+    // picking it by |f| lands on whichever side the grid happens to hit
+    // first, and a detuned ring is not symmetric.
+    const double target = std::abs(f_ref);
+    Eigen::Index i = -1;
+    double best = std::numeric_limits<double>::infinity();
+    for (Eigen::Index k = 0; k < freq_hz.size(); ++k) {
+        if (freq_hz(k) <= 0.0)
+            continue;
+        const double d = std::abs(freq_hz(k) - target);
+        if (d < best) {
+            best = d;
+            i = k;
+        }
+    }
+    if (i < 0 || !(mag(i) > 0.0))
+        throw std::runtime_error(
+            "Plotter::to_dB: no usable reference bin at +f_ref - renormalising "
+            "the two curves differently would make them incomparable");
+
+    // The ideal is exactly 0 at DC; floor it so log10 stays finite. 1e-12 of
+    // the reference is 240 dB down, far below any axis we draw.
+    const double floor_mag = mag(i) * 1e-12;
+    return 20.0 * (mag.max(floor_mag) / mag(i)).log10();
 }
 
 void Plotter::show() { plt::show(); }
@@ -151,10 +173,11 @@ void Plotter::plot_frequency_response(const MRRCascade &cascade, long N) {
         casc_phase_unwrapped(i) += offset;
     }
 
-    // Centra a zero a f = 0 per simmetria rispetto all'ideale
+    // Centra a zero su f = 0: mid-1 e mid sono i due campioni a cavallo
+    // dello zero, la griglia non ci cade sopra esattamente.
     Eigen::Index mid = casc_phase_raw.size() / 2;
     casc_phase_unwrapped -=
-        (casc_phase_unwrapped(mid) + casc_phase_unwrapped(mid + 1)) / 2.0;
+        (casc_phase_unwrapped(mid - 1) + casc_phase_unwrapped(mid)) / 2.0;
 
     ArrayXd casc_phase = casc_phase_unwrapped / M_PI;
     ArrayXd ideal_abs = (2.0 * M_PI * freq_hz).abs().pow(n);

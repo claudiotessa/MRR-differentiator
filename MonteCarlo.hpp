@@ -23,6 +23,12 @@ class MonteCarlo {
         /// index. False restores independent draws, for comparison only.
         bool correlated = true;
 
+        /// Ring-to-ring correlation inside one cascade, [LU17]: one
+        /// die-level error shared by every ring plus a small independent
+        /// residual, rho = exp(-pitch/Lc). At the defaults rho ~ 0.99.
+        double ring_pitch = fab::layout::ring_pitch;   // [m]
+        double corr_length = fab::layout::corr_length; // [m]
+
         // Geometry, used when `correlated`.
         double sigma_width = fab::process::sigma_width;   // [m]
         double sigma_height = fab::process::sigma_height; // [m]
@@ -76,6 +82,8 @@ class MonteCarlo {
         double yield_rate = 0.0; // percentage with D_n <= threshold
         double mean_n = 0.0;     // achieved order, against the target n
         double std_n = 0.0;
+        double rho_rings = 1.0;  // ring-to-ring correlation actually used
+        size_t stages = 1;
         long redraws = 0; // draws rejected for r <= xi
 
         void print_summary() const;
