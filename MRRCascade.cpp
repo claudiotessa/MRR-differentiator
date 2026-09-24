@@ -29,10 +29,11 @@ MRRCascade::MRRCascade(double n, double R, double xi, double n_eff, double n_g,
 }
 
 MRRCascade MRRCascade::perturbed(const MRRCascade &nominal, double r, double xi,
-                                 double n_eff, double n_g, double df) {
+                                 double n_eff, double n_g, double df,
+                                 double R_custom) {
     MRRCascade casc;
     casc.total_order = nominal.total_order;
-    casc.R = nominal.R;
+    casc.R = (R_custom > 0.0) ? R_custom : nominal.R;
     casc.xi = xi;
     casc.n_eff = n_eff;
     casc.n_g = n_g;
@@ -40,7 +41,7 @@ MRRCascade MRRCascade::perturbed(const MRRCascade &nominal, double r, double xi,
 
     casc.stages.reserve(nominal.stages.size());
     for (size_t i = 0; i < nominal.stages.size(); ++i) {
-        casc.stages.emplace_back(nominal.R, r, xi, n_eff, n_g, df);
+        casc.stages.emplace_back(casc.R, r, xi, n_eff, n_g, df);
     }
     return casc;
 }

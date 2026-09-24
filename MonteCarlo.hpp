@@ -3,6 +3,8 @@
 
 #include <vector>
 
+#include "Fabrication.hpp"
+#include "MRR.hpp"
 #include "MRRCascade.hpp"
 #include "Simulation.hpp"
 
@@ -16,10 +18,23 @@ class MonteCarlo {
         int trials = 500;          // devices drawn
         double lambda_0 = 1550e-9; // carrier wavelength [m]
 
-        double sigma_r = 0.0015;  // coupler gap (self-coupling)
-        double sigma_xi = 0.002;  // sidewall roughness / loss
-        double sigma_neff = 2e-4; // geometry error on the mode index
-        double sigma_ng = 0.02;   // group index
+        /// Draw the geometry error once per device and derive r, xi, n_eff
+        /// and n_g from it: one width bias sets both the gap and the mode
+        /// index. False restores independent draws, for comparison only.
+        bool correlated = true;
+
+        // Geometry, used when `correlated`.
+        double sigma_width = fab::process::sigma_width;   // [m]
+        double sigma_height = fab::process::sigma_height; // [m]
+        double sigma_radius = fab::process::sigma_radius; // [m]
+        double dxi_dwidth = fab::sensitivity::dxi_dwidth; // [1/m], unmeasured
+        double dng_dwidth = fab::sensitivity::dng_dwidth; // [1/m], unsourced
+
+        // Optical, used when not `correlated`.
+        double sigma_r = fab::sigma_r();
+        double sigma_xi = 0.002;
+        double sigma_neff = fab::sigma_neff();
+        double sigma_ng = 0.02;
 
         // Active thermal tuning. When on, a heater re-locks the carrier and
         // the neff-driven offset is replaced by the heater's residual error.
@@ -27,7 +42,10 @@ class MonteCarlo {
         double sigma_df_tuned = 0.05e9; // residual lock error [Hz]
 
         double yield_threshold = 0.10; // pass if D_n <= 10%
-        bool align_waveforms = true;   // measure shape error only
+        /// Plot-only: D_n is always measured on the overlapped waveforms.
+        /// Nothing in the Monte Carlo draws, so this changes no result here.
+        bool align_waveforms = false;
+        // bool align_waveforms = true;
 
         unsigned long long seed = 1; // To reproduce results
 
@@ -45,13 +63,20 @@ class MonteCarlo {
         std::vector<double> neff_samples;
         std::vector<double> ng_samples;
         std::vector<double> df_samples; // [GHz]
+        std::vector<double> n_samples;  // order actually realised, MRR::order()
+        // Geometry errors [m], empty on the independent path.
+        std::vector<double> dwidth_samples;
+        std::vector<double> dheight_samples;
+        std::vector<double> dradius_samples;
 
         double mean_error = 0.0;
         double std_error = 0.0;
         double median_error = 0.0;
         double max_error = 0.0;
         double yield_rate = 0.0; // percentage with D_n <= threshold
-        long redraws = 0;        // draws rejected for r <= xi
+        double mean_n = 0.0;     // achieved order, against the target n
+        double std_n = 0.0;
+        long redraws = 0; // draws rejected for r <= xi
 
         void print_summary() const;
     };
@@ -65,7 +90,7 @@ class MonteCarlo {
         : MonteCarlo(nominal_cascade, pulse, Config()) {}
 
     /// Draws and evaluates every device.
-    Result run(long sim_samples = 50000) const;
+    Result run(long sim_samples = 65536) const;
 
   private:
     MRRCascade nominal_cascade; // the device as drawn

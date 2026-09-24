@@ -208,8 +208,8 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align,
     VectorXcd out_diff_f = in_spectrum.array() * H_diff;
 
     VectorXcd out_ring_t, out_diff_t;
-    fft.inv(out_ring_t, fftshift(out_ring_f));
-    fft.inv(out_diff_t, fftshift(out_diff_f));
+    fft.inv(out_ring_t, ifftshift(out_ring_f));
+    fft.inv(out_diff_t, ifftshift(out_diff_f));
 
     // 7. Normalizzazione delle forme d'onda temporali
     Propagation p;

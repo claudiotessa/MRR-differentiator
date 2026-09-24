@@ -72,7 +72,6 @@ class Simulation {
 
     Simulation(const MRRCascade &cascade, long N = 100000)
         : cascade(cascade), n(cascade.order()), N(N), has_result(false) {}
-
     // Getters
     const MRRCascade &get_cascade() const { return cascade; }
     double get_order() const { return n; }
@@ -89,6 +88,13 @@ class Simulation {
     /**
      * @brief Eq. (3): D_n = int | |f_n|^2 - |g_n|^2 | dt / int |g_n|^2 dt,
      *        with `out` = |f_n|^2 (ring) and `ideal` = |g_n|^2.
+<<<<<<< HEAD
+=======
+     *
+     * Relative, so dt cancels and the sums stand in for the integrals. Both
+     * waveforms must be peak-normalised and overlapped in time: the ring is
+     * lossy and answers a ringdown late, and neither is shape error.
+>>>>>>> refs/remotes/origin/main
      */
     static double power_error(const Eigen::ArrayXd &out,
                               const Eigen::ArrayXd &ideal);
@@ -106,18 +112,31 @@ class Simulation {
     bool has_result = false;
     bool verbose = true;
 
-    // @brief Moves the zero frequency to the centre of the array
+    /// Rotates `vec` left by `mid`, the one operation both shifts need.
     template <typename Derived>
-    static auto fftshift(const Eigen::DenseBase<Derived> &vec) {
+    static auto rotate_left(const Eigen::DenseBase<Derived> &vec,
+                            Eigen::Index mid) {
         using Scalar = typename Derived::Scalar;
         Eigen::Matrix<Scalar, Derived::RowsAtCompileTime,
                       Derived::ColsAtCompileTime>
             out(vec.rows(), vec.cols());
-        Eigen::Index n = vec.size();
-        Eigen::Index mid = (n + 1) / 2;
+        const Eigen::Index n = vec.size();
         out.head(n - mid) = vec.tail(n - mid);
         out.tail(mid) = vec.head(mid);
         return out;
+    }
+
+    // @brief Moves the zero frequency to the centre of the array
+    template <typename Derived>
+    static auto fftshift(const Eigen::DenseBase<Derived> &vec) {
+        return rotate_left(vec, (vec.size() + 1) / 2);
+    }
+
+    /// Undoes fftshift. Not the same rotation for odd N: fftshift moves DC to
+    /// floor(N/2), and only the even case is its own inverse.
+    template <typename Derived>
+    static auto ifftshift(const Eigen::DenseBase<Derived> &vec) {
+        return rotate_left(vec, vec.size() / 2);
     }
 
     // @brief Lag in samples that best aligns `a` onto `b`

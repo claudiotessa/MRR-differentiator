@@ -17,12 +17,19 @@ class MRRCascade {
     MRRCascade(double n, double R, double xi, double n_eff, double n_g,
                double df = 0.0);
 
-    // Factory per dispositivi perturbati (fabbricazione reale con r ed xi
-    // espliciti)
+    // Permette di specificare facoltativamente un raggio perturbato R_custom
+    // (se <= 0 usa quello nominale)
     static MRRCascade perturbed(const MRRCascade &nominal, double r, double xi,
-                                double n_eff, double n_g, double df);
+                                double n_eff, double n_g, double df,
+                                double R_custom = -1.0);
 
-    // Risposta spettrale totale: H_tot(f) = PROD H_i(f)
+    // Ordine di derivazione complessivo effettivamente erogato dalla cascata
+    double achieved_order() const {
+        if (stages.empty())
+            return 0.0;
+        return static_cast<double>(stages.size()) * stages[0].order();
+    } // Risposta spettrale totale: H_tot(f) = PROD H_i(f)
+
     template <typename Derived>
     Eigen::ArrayXcd compute_H(const Eigen::ArrayBase<Derived> &Df) const {
         if (stages.empty())

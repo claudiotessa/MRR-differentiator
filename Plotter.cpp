@@ -3,6 +3,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 
@@ -43,20 +44,27 @@ Eigen::ArrayXd Plotter::to_dB(const Eigen::ArrayXd &mag,
 void Plotter::show() { plt::show(); }
 
 // =========================================================================
-// TIME-DOMAIN FIGURES
+// FIGURE FILES
 // =========================================================================
 
-void Plotter::plot_input_signal(const Simulation::Propagation &p) {
-    plt::figure_size(800, 450);
-    plt::plot(
-        to_std_vec(p.time_ns), to_std_vec(p.in_norm),
-        {{"color", "black"}, {"linewidth", "2"}, {"label", p.input_label}});
-
-    if (p.view_ns > 0.0) {
-        plt::xlim(-p.view_ns, p.view_ns);
-    }
-    finish_axes("Time [ns]", "Input signal y(t)");
+namespace {
+std::string g_out_dir = "fig";
 }
+
+void Plotter::set_output_dir(const std::string &dir) { g_out_dir = dir; }
+
+void Plotter::save(const std::string &stem) {
+    std::filesystem::create_directories(g_out_dir);
+    const std::string path =
+        (std::filesystem::path(g_out_dir) / (stem + ".pdf")).string();
+    plt::save(path);
+    plt::close();
+    std::printf("wrote %s\n", path.c_str());
+}
+
+// =========================================================================
+// TIME-DOMAIN FIGURES
+// =========================================================================
 
 void Plotter::plot_time_domain(const Simulation::Propagation &p) {
     plt::figure_size(950, 900);
@@ -187,11 +195,11 @@ void Plotter::plot_frequency_response(const MRRCascade &cascade, long N) {
 
 void Plotter::plot_all(const Simulation::Propagation &p,
                        const MRRCascade &cascade, bool show_immediately) {
-    // plot_input_signal(p);
     plot_time_domain(p);
     plot_frequency_response(cascade);
-    if (show_immediately)
+    if (show_immediately) {
         show();
+    }
 }
 
 void Plotter::plot_all(const Simulation &sim, bool show_immediately) {

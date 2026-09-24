@@ -5,6 +5,8 @@
 #include "MonteCarlo.hpp"
 #include "Simulation.hpp"
 
+#include <string>
+
 class Plotter {
   public:
     static void plot_input_signal(const Simulation::Propagation &p);
@@ -16,6 +18,13 @@ class Plotter {
     static void plot_all(const Simulation::Propagation &p,
                          const MRRCascade &cascade,
                          bool show_immediately = true);
+
+    /// Where save() writes, created if missing. Defaults to "fig".
+    static void set_output_dir(const std::string &dir);
+
+    /// Writes the current figure to <dir>/<stem>.pdf and closes it, so the
+    /// next plot call starts clean. Vector output: it is going into a slide.
+    static void save(const std::string &stem);
 
     // Overload to extract results automatically
     static void plot_all(const Simulation &sim, bool show_immediately = true);
