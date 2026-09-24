@@ -35,10 +35,15 @@ class Simulation {
         static Input gaussian(double T0);
 
         /**
-         * @brief A Gaussian whose spectrum sits at `ratio` times the ring's
-         *        Eq. (4) width - the knob the paper's design rule turns.
+         * @brief A Gaussian whose amplitude-spectrum FWHM is `ratio` times the
+         *        ring's usable band, MRR::usable_band().
+         *
+         * The paper's rule is that the input stays inside the ring's FWHM, so
+         * `ratio` <= 1 is the safe choice and smaller is more conservative.
+         * Sizing against Eq. (4) instead would be backwards: that width
+         * shrinks as the ring gets better and is zero at critical coupling.
          */
-        static Input gaussian_matched(const MRR &ring, double ratio = 2.17);
+        static Input gaussian_matched(const MRR &ring, double ratio = 1.0);
 
         /// Flat-topped pulse of half-width `T0` and order 2*`m`.
         static Input super_gaussian(double T0, int m = 6);

@@ -4,6 +4,7 @@
 #include <complex>
 #include <cstdio>
 #include <iostream>
+#include <stdexcept>
 #include <unsupported/Eigen/FFT>
 
 #include "matplotlibcpp.h"
@@ -95,8 +96,15 @@ Simulation::Input Simulation::Input::gaussian(double T0) {
 Simulation::Input Simulation::Input::gaussian_matched(const MRR &ring,
                                                       double ratio) {
     // exp(-(t/T0)^2) transforms to exp(-(pi*f*T0)^2), whose amplitude FWHM is
-    // 2*sqrt(ln2)/(pi*T0). Solve that for the wanted fraction of Eq. (4).
-    const double want = ratio * ring.transition_width();
+    // 2*sqrt(ln2)/(pi*T0). Solve that for the wanted fraction of the band.
+    const double band = ring.usable_band();
+    if (!std::isfinite(band) || band <= 0.0)
+        throw std::invalid_argument(
+            "gaussian_matched: the ring has no usable band");
+    if (!std::isfinite(ratio) || ratio <= 0.0)
+        throw std::invalid_argument("gaussian_matched: ratio must be > 0");
+
+    const double want = ratio * band;
     return gaussian(2.0 * std::sqrt(std::log(2.0)) / (M_PI * want));
 }
 
@@ -168,10 +176,23 @@ std::string Simulation::Input::describe() const {
 // =========================================================================
 
 const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
+    // Without these an infinite T0 - which is what sizing a pulse against a
+    // zero-width band used to produce - silently fills the time axis with NaN
+    // and only aborts 100 lines later, inside std::pow, naming nothing.
+    if (N < 2)
+        throw std::invalid_argument("Simulation::run: N must be at least 2");
+    if (!std::isfinite(in.T0) || in.T0 <= 0.0)
+        throw std::invalid_argument(
+            "Simulation::run: input T0 must be finite and > 0");
+
     const double ringdown =
         ring.round_trip_time() /
         (1.0 - ring.self_coupling() * ring.round_trip_loss());
     const double window = std::max(10.0 * in.T0, 40.0 * ringdown);
+    if (!std::isfinite(window) || window <= 0.0)
+        throw std::runtime_error(
+            "Simulation::run: the time window is not finite");
+
     ArrayXd time = ArrayXd::LinSpaced(N, -window, window);
     const double dt = time(1) - time(0);
 
@@ -189,7 +210,8 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align) {
               << "t:        " << ring.cross_coupling() << '\n'
               << "xi:       " << ring.round_trip_loss() << '\n'
               << "tau:      " << ring.round_trip_time() * 1e12 << " ps\n"
-              << "dv (Eq4): " << ring.transition_width() / 1e9 << " GHz\n"
+              << "band:     " << ring.usable_band() / 1e9 << " GHz\n"
+              << "phase dv: " << ring.phase_transition_width() / 1e9 << " GHz\n"
               << "input:    " << in.describe() << std::endl;
 
     ArrayXcd H_through = ring.compute_H(Df);
@@ -353,12 +375,20 @@ void Simulation::plot_time_domain() const {
 // =========================================================================
 
 void Simulation::plot_frequency_response() const {
-    // 1. La banda di differenziazione viene letta direttamente dall'anello
-    const double dv = ring.transition_width();
-    const double f_ref = dv / 2.0;
+    // 1. La banda di differenziazione viene letta direttamente dall'anello.
+    // Eq. (4) is not usable here: it collapses to 0 at critical coupling, which
+    // would put the dB anchor exactly on the notch null and send `span_hz` to
+    // its floor.
+    const double band = ring.usable_band();
+    if (!std::isfinite(band) || band <= 0.0)
+        throw std::runtime_error(
+            "plot_frequency_response: the ring has no usable band");
+
+    // Anchor well inside the band but clear of the null at the resonance.
+    const double f_ref = band / 4.0;
 
     // 2. Griglia di frequenza centrata sul notch
-    const double span_hz = std::max(1.0e9, 3.0 * dv);
+    const double span_hz = 3.0 * band;
     ArrayXd freq_hz = ArrayXd::LinSpaced(N, -span_hz, span_hz);
     std::vector<double> freq_ghz = to_std_vec((freq_hz / 1e9).eval());
 
@@ -389,7 +419,7 @@ void Simulation::plot_frequency_response() const {
     plot_ring_vs_ideal(freq_ghz, to_std_vec(ring_dB), to_std_vec(ideal_dB),
                        ring.label());
 
-    // Linee di ancoraggio su +/- dv/2
+    // Linee di ancoraggio su +/- band/4
     plt::axvline(f_ref / 1e9, 0.0, 1.0,
                  {{"color", "gray"}, {"linestyle", ":"}});
     plt::axvline(-f_ref / 1e9, 0.0, 1.0,

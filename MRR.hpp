@@ -26,21 +26,31 @@ class MRR {
           tau((n_g > 0.0 ? n_g : n_eff) * (2.0 * M_PI * R) / c) {}
 
     /**
-     * @brief Creates a first order differentiator in critical coupling.
-     * @param `B` the desired 3 dB bandwidth of the differentiator [Hz].
-     * @param `R` radius of the MRR [m].
-     * @param `n_eff` effective refractive index (also used as group index).
-     */
-    static MRR first_order(double B, double R, double n_eff);
-
-    /**
-     * @brief Creates a fractional order differentiator, under-coupled (r > xi).
-     * @param `n` the order of the differentiator, 0 < n <= 1.
+     * @brief Creates a first-order differentiator: the critically coupled ring.
+     *
+     * Critical coupling *is* r == xi, so there is nothing to solve 
+     *
      * @param `R` radius of the MRR [m].
      * @param `xi` single-pass amplitude transmission (round-trip loss).
-     * @param `n_eff` effective refractive index (also used as group index).
+     * @param `n_g` group index (sets the round-trip time).
      */
-    static MRR fractional_order(double n, double R, double xi, double n_eff);
+    static MRR first_order(double R, double xi, double n_g);
+
+    /**
+     * @brief Creates an n-th order differentiator, under-coupled (r > xi).
+     *
+     * This is the paper's design flow and the only one: `xi` is *given* - the
+     * radius and the process fix the round-trip loss - and `r` is the single
+     * quantity you draw on the mask, through the coupler gap. Eq. (2) solves
+     * for it exactly instead of scanning, which is the paper's contribution.
+     * 
+     * @param `n` the order of the differentiator, 0 < n <= 1. At n == 1 the
+     *        solution degenerates to critical coupling, r == xi.
+     * @param `R` radius of the MRR [m].
+     * @param `xi` single-pass amplitude transmission (round-trip loss).
+     * @param `n_g` group index (sets the round-trip time).
+     */
+    static MRR fractional_order(double n, double R, double xi, double n_g);
 
     template <typename Derived>
     Eigen::ArrayXcd compute_H(const Eigen::ArrayBase<Derived> &Df) const {
@@ -83,10 +93,27 @@ class MRR {
     double fwhm() const { return fsr() / finesse(); }
 
     /**
-     * @brief Width of the phase transition at resonance [Hz], Eq. (4).
-     * This is the differentiator's usable band.
+     * @brief The differentiator's usable band [Hz]: the input spectrum has to fit inside it.
+     *
+     * Note this is the standard *power* FWHM. 
      */
-    double transition_width() const {
+    double usable_band() const { return fwhm(); }
+
+    /// Power extinction at resonance [dB]. Set by the order alone.
+    double extinction_dB() const {
+        return 20.0 * std::log10(std::abs((r - xi) / (1.0 - r * xi)));
+    }
+
+    /**
+     * @brief Width of the phase transition at resonance [Hz], Eq. (4).
+     *
+     * An imperfection metric, not a bandwidth: it measures how far the phase
+     * response falls short of the ideal discontinuous n*pi step, so smaller is
+     * better. It is exactly zero at critical coupling (r == xi), where the
+     * jump is a true step - the ideal first-order differentiator. Do not size
+     * an input pulse against it; use usable_band().
+     */
+    double phase_transition_width() const {
         const double a = xi * (1.0 + r * r) / (r * (1.0 + xi * xi));
         return std::acos(std::clamp(a, -1.0, 1.0)) / (tau * M_PI);
     }
