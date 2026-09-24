@@ -7,18 +7,11 @@
 
 #include "MRR.hpp"
 
-/**
- * @brief Numerical experiments on a ring: propagation, alignment and figures.
- */
+// @brief Numerical experiments on a ring: propagation, alignment and figures.
 class Simulation {
 
   public:
-    /**
-     * @brief The optical field launched into the ring.
-     *
-     * Measured against the paper's error metric, the same ring scores ~5% on
-     * the paper's Gaussian and ~40% on a 12th-order super-Gaussian.
-     */
+    // @brief The optical field launched into the ring.
     struct Input {
         enum Shape {
             Gaussian,      // exp(-(t/T0)^2), what the paper uses
@@ -62,13 +55,7 @@ class Simulation {
         std::string describe() const;
     };
 
-    // --- Time domain -----------------------------------------------------
-    /**
-     * @brief Everything the time-domain figures draw, computed once.
-     *
-     * The waveforms are already normalised for plotting; `caption` states the
-     * measured lag and whether it was removed.
-     */
+    // @brief Everything the TIME-DOMAIN figures draw, computed once.
     struct Propagation {
         Eigen::ArrayXd time_ns;        // time axis [ns]
         Eigen::ArrayXd in_norm;        // input signal
@@ -86,9 +73,7 @@ class Simulation {
         std::string input_label;       // the input's legend label
     };
 
-    /**
-     * @brief Inizializza la simulazione legandola a un ring e ordine target.
-     */
+    // @brief Inizializza la simulazione legandola a un ring e ordine target.
     Simulation(const MRR &ring, double n, long N = 100000)
         : ring(ring), n(n), N(N), has_result(false) {}
 
@@ -96,8 +81,6 @@ class Simulation {
     const MRR &get_ring() const { return ring; }
     double get_order() const { return n; }
     const Propagation &get_last_result() const { return last_propagation; }
-
-    /// Eq. (3) for the last run(); 0 would be a perfect differentiator.
     double get_error() const { return last_propagation.error_Dn; }
 
     // --- Error metric ----------------------------------------------------
@@ -118,45 +101,14 @@ class Simulation {
      */
     const Propagation &run(const Input &in, bool align = true);
 
-    // Plot immediati che utilizzano l'ultimo risultato propagato
-    void plot_input_signal() const;
-    void plot_time_domain() const;
-    void plot_frequency_response() const;
-
-    // Mostra tutte le figure create finora
-    void show() const;
-
-    // create and show all plots
-    void plot() const;
-
   private:
     MRR ring;
-    double n;
+    double n; // differentiation order
     long N;
     Propagation last_propagation;
     bool has_result = false;
 
-    // --- Funzioni Ausiliarie Interne ---
-    void plot_ring_vs_ideal(const std::vector<double> &x,
-                            const std::vector<double> &ring,
-                            const std::vector<double> &ideal,
-                            const std::string &ring_label) const;
-
-    void finish_axes(const std::string &xlabel,
-                     const std::string &ylabel) const;
-
-    template <typename Derived>
-    static std::vector<double>
-    to_std_vec(const Eigen::ArrayBase<Derived> &arr) {
-        return std::vector<double>(arr.derived().data(),
-                                   arr.derived().data() + arr.size());
-    }
-
-    /**
-     * @brief Moves the zero frequency to the centre of the array. For an
-     *        even-length array this is its own inverse, so the same call
-     *        undoes the shift.
-     */
+    // @brief Moves the zero frequency to the centre of the array
     template <typename Derived>
     static auto fftshift(const Eigen::DenseBase<Derived> &vec) {
         using Scalar = typename Derived::Scalar;
@@ -170,30 +122,11 @@ class Simulation {
         return out;
     }
 
-    /**
-     * @brief Lag in samples that best aligns `a` onto `b`, from the peak of
-     *        their cross-correlation. This is how the reference paper compares
-     *        the ring output with the ideal derivative.
-     */
+    // @brief Lag in samples that best aligns `a` onto `b`
     static long best_lag(const Eigen::ArrayXd &a, const Eigen::ArrayXd &b);
 
     /// Shifts `arr` later in time by `k` samples, zero-filling the vacated end.
     static Eigen::ArrayXd shift_samples(const Eigen::ArrayXd &arr, long k);
-
-    /**
-     * @brief Magnitude in dB, normalised at the reference frequency `f_ref`
-     * [Hz].
-     *
-     * Both the ring and the ideal response must be anchored at the same
-     * frequency, and that frequency has to lie inside the differentiator band.
-     * Normalising each curve by its own maximum instead anchors them at the
-     * edge of the plot window, where the ring is already transparent and no
-     * longer differentiates: the two curves are then forced to agree exactly
-     * where they physically cannot and to disagree near DC, where they
-     * actually do agree.
-     */
-    static Eigen::ArrayXd to_dB(const Eigen::ArrayXd &mag,
-                                const Eigen::ArrayXd &freq_hz, double f_ref);
 };
 
 #endif

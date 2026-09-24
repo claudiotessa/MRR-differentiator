@@ -1,4 +1,5 @@
 #include "MRR.hpp"
+#include "Plotter.hpp"
 #include "Simulation.hpp"
 
 // Waveguide parameters shared by every figure.
@@ -20,8 +21,8 @@ int main() {
     // Create the impulse coupled to the ring
     Simulation::Input pulse = Simulation::Input::gaussian_matched(ring);
 
-    sim.run(pulse, false);
+    sim.run(pulse, true);
+    Plotter::plot_all(sim);
 
-    sim.plot();
     return 0;
 }
