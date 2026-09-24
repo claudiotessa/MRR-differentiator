@@ -19,7 +19,7 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     std::random_device rd;
     std::mt19937_64 rng(rd());
 
-    // Generatori gaussiani centrati sui valori nominali dell'anello
+    // Centred on the nominal ring
     std::normal_distribution<double> dist_r(nominal_ring.self_coupling(),
                                             config.sigma_r);
     std::normal_distribution<double> dist_xi(nominal_ring.round_trip_loss(),
@@ -35,33 +35,32 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
 
     int passed_count = 0;
 
-    std::cout << "\n=== Inizio Simulazione Monte Carlo (" << config.trials
-              << " iterazioni) ===" << std::endl;
+    std::cout << "\n=== Monte Carlo (" << config.trials
+              << " trials) ===" << std::endl;
 
     for (int i = 0; i < config.trials; ++i) {
-        // Estrazione e vincoli fisici (0 < r < 1, 0 < xi < 1)
+        // Drawn, then held to the physical range
         double r_sim = std::clamp(dist_r(rng), 0.85, 0.9999);
         double xi_sim = std::clamp(dist_xi(rng), 0.85, 0.9999);
         double neff_sim = dist_neff(rng);
         double ng_sim = std::max(1.5, dist_ng(rng));
 
-        // Calcolo del detuning df da variazione dell'indice di modo
+        // Resonance offset from the mode-index error
         double df_sim = 0.0;
         if (config.enable_thermal_tuning) {
-            // Se c'è controllo termico attivo, il detuning è limitato alla
-            // precisione del riscaldatore
+            // A heater re-locks the carrier: only its residual error is left
             df_sim = dist_df_tuned(rng);
         } else {
-            // Detuning ottico puro: Delta f = - f0 * (Delta n_eff / n_g)
+            // Untuned: df/f = -dn_eff/n_g
             double delta_neff = neff_sim - nominal_ring.mode_index();
             df_sim = -f0 * (delta_neff / ng_sim);
         }
 
-        // Costruzione dell'anello perturbato
+        // The as-fabricated ring
         MRR perturbed_ring(nominal_ring.radius(), r_sim, xi_sim, neff_sim,
                            ng_sim, df_sim);
 
-        // Simulazione (senza Matplotlib/rendering grafico)
+        // Headless: no plotting on this path
         Simulation sim(perturbed_ring, n, sim_samples);
         const auto &prop = sim.run(pulse, config.align_waveforms);
 
@@ -78,7 +77,7 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
         }
     }
 
-    // Statistiche descrittive
+    // Descriptive statistics
     double sum =
         std::accumulate(res.errors_Dn.begin(), res.errors_Dn.end(), 0.0);
     res.mean_error = sum / config.trials;
@@ -103,11 +102,11 @@ void MonteCarlo::Result::print_summary() const {
     std::printf("\n============================================\n");
     std::printf("      MONTE CARLO YIELD & ERROR REPORT       \n");
     std::printf("============================================\n");
-    std::printf("Campioni totali : %zu\n", errors_Dn.size());
-    std::printf("Resa (Dn <= 10%%): \033[1;32m%.2f %%\033[0m\n", yield_rate);
-    std::printf("Errore Dn Medio : %.2f %%\n", mean_error);
-    std::printf("Deviazione Std  : %.2f %%\n", std_error);
-    std::printf("Mediana Dn      : %.2f %%\n", median_error);
-    std::printf("Errore Massimo  : %.2f %%\n", max_error);
+    std::printf("Samples       : %zu\n", errors_Dn.size());
+    std::printf("Yield (Dn<=10%%): \033[1;32m%.2f %%\033[0m\n", yield_rate);
+    std::printf("Mean Dn       : %.2f %%\n", mean_error);
+    std::printf("Std deviation : %.2f %%\n", std_error);
+    std::printf("Median Dn     : %.2f %%\n", median_error);
+    std::printf("Worst Dn      : %.2f %%\n", max_error);
     std::printf("============================================\n\n");
 }

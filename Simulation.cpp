@@ -13,7 +13,7 @@ using namespace Eigen;
 // SIGNAL HELPERS
 // =========================================================================
 
-// Allinea le curve per una migliore comparazione visiva
+// Aligns the curves so they can be compared
 long Simulation::best_lag(const ArrayXd &a, const ArrayXd &b) {
     const long N = a.size();
     FFT<double> fft;
@@ -144,7 +144,7 @@ std::string Simulation::Input::describe() const {
 }
 
 // =========================================================================
-// PROPAGAZIONE TEMPORALE (TIME DOMAIN COMPUTATION)
+// TIME-DOMAIN COMPUTATION
 // =========================================================================
 
 const Simulation::Propagation &Simulation::run(const Input &in, bool align) {

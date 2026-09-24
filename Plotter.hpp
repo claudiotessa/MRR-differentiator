@@ -8,10 +8,10 @@ class Plotter {
   public:
     static void plot_input_signal(const Simulation::Propagation &p);
 
-    // Disegna la figura a 3 subplot temporali prendendo i dati già computati
+    // The three time-domain subplots, from data already computed.
     static void plot_time_domain(const Simulation::Propagation &p);
 
-    // Disegna la risposta in frequenza (modulo dB e fase) dell'anello
+    // Ring frequency response: magnitude [dB] and phase.
     static void plot_frequency_response(const MRR &ring, double n,
                                         long N = 100000);
 

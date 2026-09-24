@@ -12,7 +12,7 @@ namespace plt = matplotlibcpp;
 using namespace Eigen;
 
 // =========================================================================
-// METODI PRIVATI AUSILIARI
+// PRIVATE HELPERS
 // =========================================================================
 
 void Plotter::plot_ring_vs_ideal(const std::vector<double> &x,
@@ -47,7 +47,7 @@ Eigen::ArrayXd Plotter::to_dB(const Eigen::ArrayXd &mag,
 void Plotter::show() { plt::show(); }
 
 // =========================================================================
-// GRAFICI TEMPORALI
+// TIME-DOMAIN FIGURES
 // =========================================================================
 
 void Plotter::plot_input_signal(const Simulation::Propagation &p) {
@@ -65,7 +65,7 @@ void Plotter::plot_input_signal(const Simulation::Propagation &p) {
 void Plotter::plot_time_domain(const Simulation::Propagation &p) {
     plt::figure_size(950, 900);
 
-    // Subplot 1: Segnale di ingresso
+    // Subplot 1: input signal
     plt::subplot(3, 1, 1);
     plt::plot(
         to_std_vec(p.time_ns), to_std_vec(p.in_norm),
@@ -75,7 +75,7 @@ void Plotter::plot_time_domain(const Simulation::Propagation &p) {
     }
     finish_axes("Time [ns]", "Input signal y(t)");
 
-    // Subplot 2: Forme d'onda (derivata ideale vs uscita dell'anello)
+    // Subplot 2: waveforms, ideal derivative vs ring output
     plt::subplot(3, 1, 2);
     plt::title(p.caption);
     plt::plot(to_std_vec(p.time_ns), to_std_vec(p.diff_real_norm),
@@ -95,7 +95,7 @@ void Plotter::plot_time_domain(const Simulation::Propagation &p) {
     }
     finish_axes("Time [ns]", "Derivative y'(t)");
 
-    // Subplot 3: Potenza ottica |y'(t)|^2
+    // Subplot 3: optical power |y'(t)|^2
     plt::subplot(3, 1, 3);
     plt::plot(to_std_vec(p.time_ns), to_std_vec(p.power_diff),
               {{"color", "black"},
@@ -114,7 +114,7 @@ void Plotter::plot_time_domain(const Simulation::Propagation &p) {
 }
 
 // =========================================================================
-// GRAFICI IN FREQUENZA
+// FREQUENCY-DOMAIN FIGURES
 // =========================================================================
 
 void Plotter::plot_frequency_response(const MRR &ring, double n, long N) {
@@ -129,12 +129,12 @@ void Plotter::plot_frequency_response(const MRR &ring, double n, long N) {
     ArrayXd freq_hz = ArrayXd::LinSpaced(N, -span_hz, span_hz);
     std::vector<double> freq_ghz = to_std_vec((freq_hz / 1e9).eval());
 
-    // --- Calcolo risposta MRR ---
+    // --- MRR response ---
     ArrayXcd H_ring = ring.compute_H(freq_hz);
     ArrayXd ring_dB = to_dB(H_ring.abs(), freq_hz, f_ref);
     ArrayXd ring_phase = ring.compute_phase(freq_hz) / M_PI;
 
-    // --- Derivata ideale (j*2*pi*f)^n ---
+    // --- Ideal derivative (j*2*pi*f)^n ---
     ArrayXd ideal_abs = (2.0 * M_PI * freq_hz).abs().pow(n);
     ArrayXd ideal_dB = to_dB(ideal_abs, freq_hz, f_ref);
     ArrayXd ideal_phase = freq_hz.sign() * (n / 2.0);
@@ -150,7 +150,7 @@ void Plotter::plot_frequency_response(const MRR &ring, double n, long N) {
 
     plt::figure_size(1100, 480);
 
-    // --- Subplot Modulo ---
+    // --- Magnitude ---
     plt::subplot(1, 2, 1);
     plt::title(std::string(heading) + "\n" + ring.params_string());
     plot_ring_vs_ideal(freq_ghz, to_std_vec(ring_dB), to_std_vec(ideal_dB),
@@ -166,7 +166,7 @@ void Plotter::plot_frequency_response(const MRR &ring, double n, long N) {
     plt::ylim(-25.0, 5.0);
     finish_axes("Frequency [GHz]", "Magnitude [dB]");
 
-    // --- Subplot Fase ---
+    // --- Phase ---
     std::snprintf(title, sizeof(title), "Phase (ideal = +/- %.2f pi)", n / 2.0);
     plt::subplot(1, 2, 2);
     plt::title(std::string(title));

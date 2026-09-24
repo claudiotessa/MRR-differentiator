@@ -114,10 +114,12 @@ class MRR {
         return n_eff * L_r / mode_order(lambda0);
     }
 
-    /// Offset [Hz] from an n_eff error: at fixed m, df/f = -dn_eff/n_eff.
+    /// Offset [Hz] from an n_eff error: df/f = -dn_eff/n_g. The group index,
+    /// not n_eff: the guide is dispersive, so shifting the resonance also
+    /// moves n_eff(lambda), and working that through leaves n_g.
     double detuning_from_index_error(double dn_eff,
                                      double lambda0 = 1.55e-6) const {
-        return -(c / lambda0) * dn_eff / n_eff;
+        return -(c / lambda0) * dn_eff / n_g;
     }
 
     /// Offset [Hz] from a measured resonance shift `dlambda` [m].

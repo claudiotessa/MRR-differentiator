@@ -73,7 +73,7 @@ class Simulation {
         std::string input_label;       // the input's legend label
     };
 
-    // @brief Inizializza la simulazione legandola a un ring e ordine target.
+    // @brief Binds the simulation to a ring and a target order.
     Simulation(const MRR &ring, double n, long N = 100000)
         : ring(ring), n(n), N(N), has_result(false) {}
 
@@ -96,8 +96,7 @@ class Simulation {
                               const Eigen::ArrayXd &ideal);
 
     /**
-     * @brief Propaga l'impulso attraverso l'anello ring e memorizza
-     *        il risultato internamente nello stato dell'oggetto.
+     * @brief Propagates the pulse through the ring and stores the result.
      */
     const Propagation &run(const Input &in, bool align = true);
 
