@@ -60,9 +60,13 @@ inline constexpr double D_144_fdtd = 0.0405;  // Sec. 3.B, 0.72 + 0.72
 inline constexpr double D_210_fdtd = 0.0154;  // Sec. 3.B, 0.7 + 0.7 + 0.7
 inline constexpr double D_accept = 0.10;
 
-// Inputs: Gaussian half-widths.
-inline constexpr double input_T0 = 3e-12;     // n = 0.54
+// Inputs: Gaussian half-widths, exp(-(t/T0)^2). Sec. 2 and Sec. 3.A both use
+// 3 ps, and so does the whole n = 0.1 -> 1.8 sweep of Fig. 17. Only the
+// multi-ring cascades of Sec. 3.B widen it; 7 ps is stated for n = 1.44, and
+// n = 2.1 shares its figure (Fig. 15) so it is taken to share the pulse.
+inline constexpr double input_T0 = 3e-12;     // single ring, and Fig. 17
 inline constexpr double input_T0_144 = 7e-12; // n = 1.44
+inline constexpr double input_T0_210 = 7e-12; // n = 2.1, UNSTATED, see above
 
 // Their quoted widths: 120 GHz for the differentiator, 100 GHz for the input.
 // 120 GHz matches the notch measured at half depth in AMPLITUDE (123.5 GHz),

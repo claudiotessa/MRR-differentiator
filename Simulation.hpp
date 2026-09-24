@@ -8,11 +8,11 @@
 #include "MRR.hpp"
 #include "MRRCascade.hpp"
 
-// @brief Numerical experiments on a ring: propagation, alignment and figures.
+/// Numerical experiments on a ring: propagation, alignment and figures.
 class Simulation {
 
   public:
-    // @brief The optical field launched into the ring.
+    /// The optical field launched into the ring.
     struct Input {
         enum Shape {
             Gaussian,      // exp(-(t/T0)^2), what the paper uses
@@ -52,9 +52,9 @@ class Simulation {
         std::string describe() const;
     };
 
-    // @brief Everything the TIME-DOMAIN figures draw, computed once.
+    /// Everything the time-domain figures draw, computed once.
     struct Propagation {
-        Eigen::ArrayXd time_ns;        // time axis [ns]
+        Eigen::ArrayXd time_ps;        // time axis [ps]
         Eigen::ArrayXd in_norm;        // input signal
         Eigen::ArrayXd diff_real_norm; // ideal derivative, real part
         Eigen::ArrayXd ring_real_norm; // ring output, real part
@@ -64,7 +64,7 @@ class Simulation {
         long lag = 0;                  // ring delay [samples]
         double lag_ps = 0.0;           // ring delay [ps]
         double error_Dn = 0.0;         // Eq. (3), see power_error()
-        double view_ns = 0.0;          // half-width of a sensible x range [ns]
+        double view_ps = 0.0;          // half-width of a sensible x range [ps]
         std::string caption;           // lag, formatted for a subplot title
         std::string ring_label;        // the ring's legend label
         std::string input_label;       // the input's legend label
@@ -72,11 +72,19 @@ class Simulation {
 
     Simulation(const MRRCascade &cascade, long N = 131072)
         : cascade(cascade), n(cascade.order()), N(N), has_result(false) {}
-    // Getters
+
+    // --- Getters -------------------------------------------------------
     const MRRCascade &get_cascade() const { return cascade; }
     double get_order() const { return n; }
     const Propagation &get_last_result() const { return last_propagation; }
     double get_error() const { return last_propagation.error_Dn; }
+
+    /// Half-width of the x range the time-domain figures draw [ps]. run()
+    /// widens it if the pulse would not fit.
+    Simulation &set_view_half_ps(double ps) {
+        view_half_ps = ps;
+        return *this;
+    }
 
     // Silences run()'s stdout block. The Monte Carlo runs thousands of
     // propagations and none of them want to narrate.
@@ -107,6 +115,7 @@ class Simulation {
     Propagation last_propagation;
     bool has_result = false;
     bool verbose = true;
+    double view_half_ps = 20.0; // time-domain x range, +/- this many ps
 
     /// Rotates `vec` left by `mid`, the one operation both shifts need.
     template <typename Derived>
@@ -122,7 +131,7 @@ class Simulation {
         return out;
     }
 
-    // @brief Moves the zero frequency to the centre of the array
+    /// Moves the zero frequency to the centre of the array.
     template <typename Derived>
     static auto fftshift(const Eigen::DenseBase<Derived> &vec) {
         return rotate_left(vec, (vec.size() + 1) / 2);
@@ -135,7 +144,7 @@ class Simulation {
         return rotate_left(vec, vec.size() / 2);
     }
 
-    // @brief Lag in samples that best aligns `a` onto `b`
+    /// Lag in samples that best aligns `a` onto `b`.
     static long best_lag(const Eigen::ArrayXd &a, const Eigen::ArrayXd &b);
 
     /// Shifts `arr` later in time by `k` samples, zero-filling the vacated end.

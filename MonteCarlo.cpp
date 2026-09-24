@@ -45,19 +45,19 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
 
     std::mt19937_64 rng(config.seed);
 
-    // Tutte le estrazioni passano da una normale standard: le sigma entrano
-    // dopo, insieme alla correlazione anello-anello.
+    // Every draw goes through a standard normal; the sigmas and the
+    // ring-to-ring correlation are applied afterwards.
     std::normal_distribution<double> zn(0.0, 1.0);
 
-    // [LU17]: gli anelli di una cascata distano decine di um, ben dentro la
-    // lunghezza di correlazione millimetrica, quindi condividono quasi tutto
-    // l'errore geometrico. x_i = sigma * (sqrt(rho)*z_comune + sqrt(1-rho)*z_i)
+    // [LU17]: the rings of a cascade sit tens of microns apart, far inside
+    // the millimetre correlation length, so they share almost all of the
+    // geometry error. x_i = sigma*(sqrt(rho)*z_common + sqrt(1-rho)*z_i).
     const size_t S = std::max<size_t>(1, nominal_cascade.num_stages());
     const double rho =
         std::clamp(fab::layout::rho(config.ring_pitch, config.corr_length),
                    0.0, 1.0);
-    const double w_com = std::sqrt(rho);       // peso della quota comune
-    const double w_ind = std::sqrt(1.0 - rho); // peso del residuo per anello
+    const double w_com = std::sqrt(rho);       // weight of the shared part
+    const double w_ind = std::sqrt(1.0 - rho); // weight of the per-ring residual
 
     const double c = 2.99792458e8;
     const double f0 = c / config.lambda_0;
@@ -87,7 +87,7 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
         double dw_avg = 0.0, dh_avg = 0.0, dR_avg = 0.0;
 
         for (int attempt = 0;; ++attempt) {
-            // Quota comune a tutto il chip, estratta una volta per device.
+            // Chip-wide part, drawn once per device.
             const double zw = zn(rng), zh = zn(rng), zR = zn(rng);
             const double zr = zn(rng), zx = zn(rng), zne = zn(rng),
                          zng = zn(rng);
@@ -105,8 +105,8 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
                     dh = config.sigma_height * shared(zh);
                     dR = config.sigma_radius * shared(zR);
 
-                    // Allargando la guida (+dw) il gap si chiude e
-                    // l'accoppiamento cresce: r cala.
+                    // A wider guide (+dw) closes the gap, so the coupling
+                    // rises and r falls.
                     p.r = r_nom - fab::sensitivity::dr_dgap * dw;
                     p.n_eff = neff_nom + fab::sensitivity::dneff_dwidth * dw +
                               fab::sensitivity::dneff_dheight * dh;
@@ -126,9 +126,9 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
                 p.xi = std::clamp(p.xi, 0.5, 0.9999);
                 p.n_g = std::max(1.5, p.n_g);
 
-                // Ogni anello ha il suo heater, quindi il residuo di aggancio
-                // e' indipendente; senza heater il detuning segue n_eff ed e'
-                // correlato quanto la geometria.
+                // Each ring has its own heater, so the lock residual is
+                // independent; without one the detuning follows n_eff and is
+                // as correlated as the geometry.
                 p.df = config.enable_thermal_tuning
                            ? config.sigma_df_tuned * zn(rng)
                            : -f0 * (p.n_eff - neff_nom) / p.n_g;
@@ -186,7 +186,7 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     if (config.verbose)
         std::printf("\n");
 
-    // Statistiche sull'errore Dn
+    // Statistics on the error D_n.
     double sum =
         std::accumulate(res.errors_Dn.begin(), res.errors_Dn.end(), 0.0);
     res.mean_error = sum / config.trials;
@@ -197,7 +197,7 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     }
     res.std_error = std::sqrt(sq_sum / config.trials);
 
-    // Statistiche sull'ordine di derivazione effettivamente conseguito
+    // Statistics on the order actually realised.
     double n_sum =
         std::accumulate(res.n_samples.begin(), res.n_samples.end(), 0.0);
     res.mean_n = n_sum / config.trials;
@@ -213,27 +213,29 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     res.max_error = sorted_err.back();
     res.yield_rate =
         (static_cast<double>(passed_count) / config.trials) * 100.0;
+    res.threshold_pct = config.yield_threshold * 100.0;
 
     return res;
 }
 
 void MonteCarlo::Result::print_summary() const {
     std::printf("\n============================================\n");
-    std::printf("      MONTE CARLO YIELD & ERROR REPORT       \n");
+    std::printf("      MONTE CARLO YIELD & ERROR REPORT      \n");
     std::printf("============================================\n");
-    std::printf("Samples       : %zu\n", errors_Dn.size());
-    std::printf("Yield (Dn<=10%%): \033[1;32m%.2f %%\033[0m\n", yield_rate);
-    std::printf("Mean Dn       : %.2f %%\n", mean_error);
-    std::printf("Std deviation : %.2f %%\n", std_error);
-    std::printf("Median Dn     : %.2f %%\n", median_error);
-    std::printf("Worst Dn      : %.2f %%\n", max_error);
-    std::printf("Achieved n    : %.4f +/- %.4f\n", mean_n, std_n);
+    std::printf("Samples          : %zu\n", errors_Dn.size());
+    std::printf("Yield (D_n<=%2.0f%%) : \033[1;32m%.2f %%\033[0m\n",
+                threshold_pct, yield_rate);
+    std::printf("Mean D_n         : %.2f %%\n", mean_error);
+    std::printf("Std deviation    : %.2f %%\n", std_error);
+    std::printf("Median D_n       : %.2f %%\n", median_error);
+    std::printf("Worst D_n        : %.2f %%\n", max_error);
+    std::printf("Achieved n       : %.4f +/- %.4f\n", mean_n, std_n);
     if (stages > 1) {
-        std::printf("Rings         : %zu, rho(ring-ring) = %.4f\n", stages,
+        std::printf("Rings            : %zu, rho(ring-ring) = %.4f\n", stages,
                     rho_rings);
     }
     if (redraws > 0) {
-        std::printf("Redrawn       : %ld (r <= xi)\n", redraws);
+        std::printf("Redrawn          : %ld (r <= xi)\n", redraws);
     }
     std::printf("============================================\n\n");
 }

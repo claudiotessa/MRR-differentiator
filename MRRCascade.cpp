@@ -11,11 +11,10 @@ MRRCascade::MRRCascade(double n, double R, double xi, double n_eff, double n_g,
                        double df)
     : total_order(n), R(R), xi(xi), n_eff(n_eff), n_g(n_g), df(df) {
     if (n <= 0.0) {
-        throw std::invalid_argument(
-            "L'ordine di derivazione n deve essere > 0");
+        throw std::invalid_argument("MRRCascade: the order n must be > 0");
     }
 
-    // Numero di anelli necessari: N = ceil(n)
+    // Rings needed: N = ceil(n), each carrying an equal share of the order.
     int N = static_cast<int>(std::ceil(n));
     double n_sub = n / static_cast<double>(N);
 
@@ -35,7 +34,7 @@ MRRCascade::perturbed(const MRRCascade &nominal,
                       const std::vector<StageParams> &stage_params) {
     if (stage_params.size() != nominal.stages.size())
         throw std::invalid_argument(
-            "MRRCascade::perturbed: un set di parametri per ogni stadio");
+            "MRRCascade::perturbed: one parameter set per stage");
 
     MRRCascade casc;
     casc.total_order = nominal.total_order;
@@ -71,8 +70,8 @@ double MRRCascade::usable_band(double tol_dB) const {
         return 0.0;
 
     const double fsr = 1.0 / stages[0].round_trip_time();
-    // Ancora ben dentro la risonanza del singolo anello, dove la legge di
-    // potenza vale di sicuro; fissa la costante C del confronto.
+    // Well inside the single ring's resonance, where the power law certainly
+    // holds; this fixes the constant C of the comparison.
     const double f_ref = stages[0].usable_band() / 4.0;
 
     const int M = 4000;
@@ -84,7 +83,7 @@ double MRRCascade::usable_band(double tol_dB) const {
         f(i) = f_lo * std::pow(step, i);
     const Eigen::ArrayXd mag = compute_H(f).abs();
 
-    // Legge di potenza ideale, normalizzata su f_ref
+    // Ideal power law, normalised at f_ref.
     int k_ref = 0;
     for (int i = 1; i < M; ++i)
         if (std::abs(f(i) - f_ref) < std::abs(f(k_ref) - f_ref))
@@ -99,7 +98,7 @@ double MRRCascade::usable_band(double tol_dB) const {
     };
 
     if (!within(k_ref))
-        return stages[0].usable_band(); // niente da misurare, ripiega
+        return stages[0].usable_band(); // nothing to measure, fall back
 
     int lo = k_ref, hi = k_ref;
     while (lo > 0 && within(lo - 1))
@@ -132,9 +131,9 @@ std::string MRRCascade::params_string() const {
     char buf[256];
     std::snprintf(
         buf, sizeof(buf),
-        "Cascade: n = %.2f (%zu rings), R = %.0f um, r = %.4f, xi = %.4f\n"
-        "tau = %.2f ps, usable band = %.2f GHz, df = %.3f GHz",
-        total_order, stages.size(), R * 1e6, stage_self_coupling(), xi,
+        "Cascade: n = %.2f (%zu ring%s), R = %.2f um, r = %.4f, xi = %.4f\n"
+        "tau = %.2f ps, usable band = %.1f GHz, df = %.3f GHz",
+        total_order, stages.size(), stages.size() == 1 ? "" : "s", R * 1e6, stage_self_coupling(), xi,
         round_trip_time() * 1e12, usable_band() / 1e9, df / 1e9);
     return std::string(buf);
 }

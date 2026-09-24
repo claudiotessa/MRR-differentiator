@@ -79,7 +79,8 @@ class MonteCarlo {
         double std_error = 0.0;
         double median_error = 0.0;
         double max_error = 0.0;
-        double yield_rate = 0.0; // percentage with D_n <= threshold
+        double yield_rate = 0.0;      // percentage with D_n <= threshold
+        double threshold_pct = 10.0;  // the threshold it was scored against [%]
         double mean_n = 0.0;     // achieved order, against the target n
         double std_n = 0.0;
         double rho_rings = 1.0;  // ring-to-ring correlation actually used

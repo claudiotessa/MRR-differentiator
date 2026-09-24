@@ -1,5 +1,6 @@
 #include "Plotter.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <cstdio>
@@ -91,50 +92,50 @@ void Plotter::save(const std::string &stem) {
 void Plotter::plot_time_domain(const Simulation::Propagation &p) {
     plt::figure_size(950, 900);
 
-    // Subplot 1: input signal
+    // Subplot 1: the launched pulse.
     plt::subplot(3, 1, 1);
     plt::plot(
-        to_std_vec(p.time_ns), to_std_vec(p.in_norm),
+        to_std_vec(p.time_ps), to_std_vec(p.in_norm),
         {{"color", "black"}, {"linewidth", "2"}, {"label", p.input_label}});
-    if (p.view_ns > 0.0) {
-        plt::xlim(-p.view_ns, p.view_ns);
+    if (p.view_ps > 0.0) {
+        plt::xlim(-p.view_ps, p.view_ps);
     }
-    finish_axes("Time [ns]", "Input signal y(t)");
+    finish_axes("Time [ps]", "Input y(t) [norm.]");
 
-    // Subplot 2: waveforms, ideal derivative vs ring output
+    // Subplot 2: ideal derivative against the ring output, field.
     plt::subplot(3, 1, 2);
     plt::title(p.caption);
-    plt::plot(to_std_vec(p.time_ns), to_std_vec(p.diff_real_norm),
+    plt::plot(to_std_vec(p.time_ps), to_std_vec(p.diff_real_norm),
               {{"color", "black"},
                {"linewidth", "2"},
                {"label", "ideal derivative"}});
     plt::plot(
-        to_std_vec(p.time_ns), to_std_vec(p.ring_real_norm),
+        to_std_vec(p.time_ps), to_std_vec(p.ring_real_norm),
         {{"color", "red"}, {"linewidth", "2"}, {"label", "MRR output (real)"}});
-    plt::plot(to_std_vec(p.time_ns), to_std_vec(p.ring_imag_norm),
+    plt::plot(to_std_vec(p.time_ps), to_std_vec(p.ring_imag_norm),
               {{"color", "red"},
                {"linestyle", "--"},
                {"linewidth", "2"},
                {"label", "MRR output (imag)"}});
-    if (p.view_ns > 0.0) {
-        plt::xlim(-p.view_ns, p.view_ns);
+    if (p.view_ps > 0.0) {
+        plt::xlim(-p.view_ps, p.view_ps);
     }
-    finish_axes("Time [ns]", "Derivative y'(t)");
+    finish_axes("Time [ps]", "Derivative y'(t) [norm.]");
 
-    // Subplot 3: optical power |y'(t)|^2
+    // Subplot 3: optical power, which is what D_n is measured on.
     plt::subplot(3, 1, 3);
-    plt::plot(to_std_vec(p.time_ns), to_std_vec(p.power_diff),
+    plt::plot(to_std_vec(p.time_ps), to_std_vec(p.power_diff),
               {{"color", "black"},
                {"linewidth", "2"},
                {"label", "ideal derivative (power)"}});
-    plt::plot(to_std_vec(p.time_ns), to_std_vec(p.power_ring),
+    plt::plot(to_std_vec(p.time_ps), to_std_vec(p.power_ring),
               {{"color", "red"},
                {"linewidth", "2"},
                {"label", "MRR output (power)"}});
-    if (p.view_ns > 0.0) {
-        plt::xlim(-p.view_ns, p.view_ns);
+    if (p.view_ps > 0.0) {
+        plt::xlim(-p.view_ps, p.view_ps);
     }
-    finish_axes("Time [ns]", "|y'(t)|^2");
+    finish_axes("Time [ps]", "Power |y'(t)|^2 [norm.]");
 
     plt::tight_layout();
 }
@@ -160,7 +161,7 @@ void Plotter::plot_frequency_response(const MRRCascade &cascade, long N) {
     ArrayXd casc_dB = to_dB(H_casc.abs(), freq_hz, f_ref);
     ArrayXd casc_phase_raw = cascade.compute_phase(freq_hz);
 
-    // Algoritmo di Phase Unwrapping (elimina i salti di 2*pi)
+    // Phase unwrapping: remove the 2*pi jumps.
     ArrayXd casc_phase_unwrapped = casc_phase_raw;
     double offset = 0.0;
     for (long i = 1; i < casc_phase_raw.size(); ++i) {
@@ -173,8 +174,8 @@ void Plotter::plot_frequency_response(const MRRCascade &cascade, long N) {
         casc_phase_unwrapped(i) += offset;
     }
 
-    // Centra a zero su f = 0: mid-1 e mid sono i due campioni a cavallo
-    // dello zero, la griglia non ci cade sopra esattamente.
+    // Centre on f = 0. The grid does not land exactly on zero, so mid-1 and
+    // mid are the two samples straddling it.
     Eigen::Index mid = casc_phase_raw.size() / 2;
     casc_phase_unwrapped -=
         (casc_phase_unwrapped(mid - 1) + casc_phase_unwrapped(mid)) / 2.0;
@@ -199,7 +200,9 @@ void Plotter::plot_frequency_response(const MRRCascade &cascade, long N) {
     plt::axvline(-f_ref / 1e9, 0.0, 1.0,
                  {{"color", "gray"}, {"linestyle", ":"}});
     plt::xlim(-span_hz / 1e9, span_hz / 1e9);
-    plt::ylim(-30.0, 5.0);
+    // The ideal climbs as |f|^n without bound, so the top of the axis has to
+    // follow the span; a fixed +5 dB clipped it even on the narrow view.
+    plt::ylim(-40.0, std::max(5.0, ideal_dB.maxCoeff() + 5.0));
     finish_axes("Frequency [GHz]", "Magnitude [dB]");
 
     plt::subplot(1, 2, 2);
@@ -234,22 +237,30 @@ void Plotter::plot_monte_carlo(const MonteCarlo::Result &res,
     plt::figure_size(850, 480);
     plt::hist(res.errors_Dn, 40, "steelblue", 0.75, true);
 
+    char thr_label[64];
+    std::snprintf(thr_label, sizeof(thr_label), "yield threshold (%.0f%%)",
+                  threshold);
     plt::axvline(threshold, 0.0, 1.0,
                  {{"color", "red"},
                   {"linestyle", "--"},
                   {"linewidth", "2"},
-                  {"label", "Soglia Yield (10%)"}});
+                  {"label", thr_label}});
+
+    char mean_label[64];
+    std::snprintf(mean_label, sizeof(mean_label), "mean D_n (%.2f%%)",
+                  res.mean_error);
     plt::axvline(res.mean_error, 0.0, 1.0,
                  {{"color", "orange"},
                   {"linestyle", "-"},
                   {"linewidth", "2"},
-                  {"label", "Media Dn"}});
+                  {"label", mean_label}});
 
-    char title[128];
+    char title[160];
     std::snprintf(title, sizeof(title),
-                  "Distribuzione Errore Monte Carlo (Resa = %.1f%%)",
-                  res.yield_rate);
+                  "Monte Carlo error distribution, %zu devices"
+                  " (yield = %.1f%%)",
+                  res.errors_Dn.size(), res.yield_rate);
     plt::title(std::string(title));
-    finish_axes("Errore di derivazione D_n [%]", "Densita di probabilita");
+    finish_axes("Differentiation error D_n [%]", "Probability density");
     plt::tight_layout();
 }

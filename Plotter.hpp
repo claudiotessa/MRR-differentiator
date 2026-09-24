@@ -9,11 +9,12 @@
 
 class Plotter {
   public:
-    static void plot_input_signal(const Simulation::Propagation &p);
     static void plot_time_domain(const Simulation::Propagation &p);
+    /// Magnitude and phase against the ideal |2*pi*f|^n, over three usable
+    /// bands either side of the resonance.
     static void plot_frequency_response(const MRRCascade &cascade,
                                         long N = 131072);
-    static void show(); // Show all previously built figures
+    static void show(); // draws every figure built so far
 
     static void plot_all(const Simulation::Propagation &p,
                          const MRRCascade &cascade,
@@ -26,7 +27,7 @@ class Plotter {
     /// next plot call starts clean. Vector output: it is going into a slide.
     static void save(const std::string &stem);
 
-    // Overload to extract results automatically
+    /// Overload that pulls the last result straight off the simulation.
     static void plot_all(const Simulation &sim, bool show_immediately = true);
 
     static void plot_monte_carlo(const MonteCarlo::Result &res,

@@ -49,9 +49,9 @@ MRR MRR::fractional_order(double n, double R, double xi, double n_eff,
 std::string MRR::params_string() const {
     char buf[256];
     std::snprintf(buf, sizeof(buf),
-                  "R = %.0f um, n_eff = %.2f, n_g = %.2f, tau = %.2f ps, "
+                  "R = %.2f um, n_eff = %.2f, n_g = %.2f, tau = %.2f ps, "
                   "FSR = %.1f GHz\n"
-                  "r = %.4f, xi = %.4f, finesse = %.1f, band = %.2f GHz, "
+                  "r = %.4f, xi = %.4f, finesse = %.1f, band = %.1f GHz, "
                   "phase dv = %.3f GHz, df = %.3f GHz",
                   radius() * 1e6, mode_index(), group_index(),
                   round_trip_time() * 1e12, fsr() / 1e9, self_coupling(),
