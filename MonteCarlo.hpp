@@ -55,10 +55,6 @@ class MonteCarlo {
 
         unsigned long long seed = 1; // To reproduce results
 
-        /// Redraw any device with r <= xi. Eq. (2) only describes the
-        /// under-coupled branch; an over-coupled draw is a different device,
-        bool enforce_under_coupled = true;
-
         bool verbose = true; // progress line
     };
 
@@ -69,7 +65,7 @@ class MonteCarlo {
         std::vector<double> neff_samples;
         std::vector<double> ng_samples;
         std::vector<double> df_samples; // [GHz]
-        std::vector<double> n_samples;  // order actually realised, MRR::order()
+        std::vector<double> n_samples;  // order actually realised, NaN if over-coupled
         // Geometry errors [m], empty on the independent path.
         std::vector<double> dwidth_samples;
         std::vector<double> dheight_samples;
@@ -81,11 +77,11 @@ class MonteCarlo {
         double max_error = 0.0;
         double yield_rate = 0.0;      // percentage with D_n <= threshold
         double threshold_pct = 10.0;  // the threshold it was scored against [%]
-        double mean_n = 0.0;     // achieved order, against the target n
+        double mean_n = 0.0;     // achieved order, over-coupled devices excluded
         double std_n = 0.0;
         double rho_rings = 1.0;  // ring-to-ring correlation actually used
         size_t stages = 1;
-        long redraws = 0; // draws rejected for r <= xi
+        long over_coupled = 0; // devices with r <= xi, kept and scored
 
         void print_summary() const;
     };

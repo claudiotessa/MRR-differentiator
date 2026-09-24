@@ -20,6 +20,10 @@ MRR MRR::fractional_order(double n, double R, double xi, double n_eff,
         throw std::invalid_argument(
             "fractional_order: n must be in (0,1]; cascade rings for n > 1");
 
+    // K = tan(pi/2)^2 overflows; the limit is critical coupling.
+    if (n == 1.0)
+        return first_order(R, xi, n_eff, n_g, df);
+
     // Exact solution to Eq. (2)
     double K = std::pow(std::tan(n * M_PI / 2.0), 2);
 

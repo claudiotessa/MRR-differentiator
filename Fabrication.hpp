@@ -37,7 +37,7 @@ inline constexpr double r_n054 = 0.9568;
 
 // FDTD-extracted values, Sec. 3. Device 1 is the same ring measured rather
 // than designed, device 2 a second radius, multiring the 0.72 stage.
-inline constexpr double xi_fdtd = 0.9493;      // device 1, R = 1.9 um
+inline constexpr double xi_fdtd = 0.9483;      // device 1, R = 1.9 um
 inline constexpr double gap_n054 = 172e-9;     // device 1
 inline constexpr double R_dev2 = 1.5e-6;
 inline constexpr double r_dev2 = 0.8711;
@@ -139,7 +139,7 @@ inline constexpr double dneff_dheight = 2.0e-3 / 1e-9; // [1/m]
 /// t = 0.9568. Two points, no error bars. The tightest tolerance here.
 inline constexpr double dr_dgap = 8.17e-4 / 1e-9; // [1/m]
 
-/// [LIU25]'s two FDTD rings: R = 1.9 um -> xi = 0.9493, R = 1.5 um ->
+/// [LIU25]'s FDTD rings: R = 1.9 um -> xi = 0.9493 (Sec. 3.B), R = 1.5 um ->
 /// xi = 0.8323. A 400 nm secant, so it overestimates the slope at 1.9 um
 /// where the curve flattens.
 inline constexpr double dxi_dradius = 2.925e-4 / 1e-9; // [1/m]

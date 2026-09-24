@@ -157,13 +157,15 @@ const Simulation::Propagation &Simulation::run(const Input &in, bool align,
             "Simulation::run: the pulse T0 must be finite and > 0");
     }
 
-    // 1. Time window, long enough for the ring to have rung down.
+    // 1. Time window, long enough for the ring to have rung down and for the
+    // slow t^-(n+1) tail of a fractional derivative not to wrap round: at
+    // 10 T0 / 40 ringdowns D_0.54 was still 0.17 points off its limit.
     const double tau_stage = cascade.round_trip_time();
     const double r_stage = cascade.stage_self_coupling();
     const double xi_stage = cascade.round_trip_loss();
 
     const double ringdown = tau_stage / (1.0 - r_stage * xi_stage);
-    const double window = std::max(10.0 * in.T0, 40.0 * ringdown);
+    const double window = std::max(40.0 * in.T0, 160.0 * ringdown);
 
     if (!std::isfinite(window) || window <= 0.0) {
         throw std::runtime_error(

@@ -85,76 +85,66 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
 
     for (int i = 0; i < config.trials; ++i) {
         double dw_avg = 0.0, dh_avg = 0.0, dR_avg = 0.0;
+        bool over_coupled = false;
 
-        for (int attempt = 0;; ++attempt) {
-            // Chip-wide part, drawn once per device.
-            const double zw = zn(rng), zh = zn(rng), zR = zn(rng);
-            const double zr = zn(rng), zx = zn(rng), zne = zn(rng),
-                         zng = zn(rng);
-            auto shared = [&](double z) { return w_com * z + w_ind * zn(rng); };
+        // Chip-wide part, drawn once per device.
+        const double zw = zn(rng), zh = zn(rng), zR = zn(rng);
+        const double zr = zn(rng), zx = zn(rng), zne = zn(rng),
+                     zng = zn(rng);
+        auto shared = [&](double z) { return w_com * z + w_ind * zn(rng); };
 
-            bool ok = true;
-            dw_avg = dh_avg = dR_avg = 0.0;
+        for (size_t k = 0; k < S; ++k) {
+            MRRCascade::StageParams &p = sp[k];
+            double dw = 0.0, dh = 0.0, dR = 0.0;
 
-            for (size_t k = 0; k < S; ++k) {
-                MRRCascade::StageParams &p = sp[k];
-                double dw = 0.0, dh = 0.0, dR = 0.0;
+            if (config.correlated) {
+                dw = config.sigma_width * shared(zw);
+                dh = config.sigma_height * shared(zh);
+                dR = config.sigma_radius * shared(zR);
 
-                if (config.correlated) {
-                    dw = config.sigma_width * shared(zw);
-                    dh = config.sigma_height * shared(zh);
-                    dR = config.sigma_radius * shared(zR);
-
-                    // A wider guide (+dw) closes the gap, so the coupling
-                    // rises and r falls.
-                    p.r = r_nom - fab::sensitivity::dr_dgap * dw;
-                    p.n_eff = neff_nom + fab::sensitivity::dneff_dwidth * dw +
-                              fab::sensitivity::dneff_dheight * dh;
-                    p.xi = xi_nom + fab::sensitivity::dxi_dradius * dR +
-                           config.dxi_dwidth * dw;
-                    p.n_g = ng_nom + config.dng_dwidth * dw;
-                    p.R = R_nom + dR;
-                } else {
-                    p.r = r_nom + config.sigma_r * shared(zr);
-                    p.xi = xi_nom + config.sigma_xi * shared(zx);
-                    p.n_eff = neff_nom + config.sigma_neff * shared(zne);
-                    p.n_g = ng_nom + config.sigma_ng * shared(zng);
-                    p.R = R_nom;
-                }
-
-                p.r = std::clamp(p.r, 0.5, 0.9999);
-                p.xi = std::clamp(p.xi, 0.5, 0.9999);
-                p.n_g = std::max(1.5, p.n_g);
-
-                // Each ring has its own heater, so the lock residual is
-                // independent; without one the detuning follows n_eff and is
-                // as correlated as the geometry.
-                p.df = config.enable_thermal_tuning
-                           ? config.sigma_df_tuned * zn(rng)
-                           : -f0 * (p.n_eff - neff_nom) / p.n_g;
-
-                dw_avg += dw;
-                dh_avg += dh;
-                dR_avg += dR;
-
-                if (config.enforce_under_coupled && !(p.r > p.xi))
-                    ok = false;
+                // A wider guide (+dw) closes the gap, so the coupling
+                // rises and r falls.
+                p.r = r_nom - fab::sensitivity::dr_dgap * dw;
+                p.n_eff = neff_nom + fab::sensitivity::dneff_dwidth * dw +
+                          fab::sensitivity::dneff_dheight * dh;
+                p.xi = xi_nom + fab::sensitivity::dxi_dradius * dR +
+                       config.dxi_dwidth * dw;
+                p.n_g = ng_nom + config.dng_dwidth * dw;
+                p.R = R_nom + dR;
+            } else {
+                p.r = r_nom + config.sigma_r * shared(zr);
+                p.xi = xi_nom + config.sigma_xi * shared(zx);
+                p.n_eff = neff_nom + config.sigma_neff * shared(zne);
+                p.n_g = ng_nom + config.sigma_ng * shared(zng);
+                p.R = R_nom;
             }
 
-            dw_avg /= static_cast<double>(S);
-            dh_avg /= static_cast<double>(S);
-            dR_avg /= static_cast<double>(S);
+            p.r = std::clamp(p.r, 0.5, 0.9999);
+            p.xi = std::clamp(p.xi, 0.5, 0.9999);
+            p.n_g = std::max(1.5, p.n_g);
 
-            if (ok)
-                break;
+            // Each ring has its own heater, so the lock residual is
+            // independent; without one the detuning follows n_eff and is
+            // as correlated as the geometry.
+            p.df = config.enable_thermal_tuning
+                       ? config.sigma_df_tuned * zn(rng)
+                       : -f0 * (p.n_eff - neff_nom) / p.n_g;
 
-            ++res.redraws;
-            if (attempt >= 999) {
-                throw std::runtime_error(
-                    "MonteCarlo: cannot draw r > xi - the coupling margin is "
-                    "too small for these tolerances");
-            }
+            dw_avg += dw;
+            dh_avg += dh;
+            dR_avg += dR;
+
+            // Eq. (1) still holds for r <= xi, so the device is simulated
+            // and scored like any other; only Eq. (2), the order, fails.
+            if (!(p.r > p.xi))
+                over_coupled = true;
         }
+
+        dw_avg /= static_cast<double>(S);
+        dh_avg /= static_cast<double>(S);
+        dR_avg /= static_cast<double>(S);
+        if (over_coupled)
+            ++res.over_coupled;
 
         MRRCascade perturbed = MRRCascade::perturbed(nominal_cascade, sp);
 
@@ -197,15 +187,23 @@ MonteCarlo::Result MonteCarlo::run(long sim_samples) const {
     }
     res.std_error = std::sqrt(sq_sum / config.trials);
 
-    // Statistics on the order actually realised.
-    double n_sum =
-        std::accumulate(res.n_samples.begin(), res.n_samples.end(), 0.0);
-    res.mean_n = n_sum / config.trials;
+    // Statistics on the order actually realised, over the devices that have
+    // one: an over-coupled ring's order is NaN.
+    double n_sum = 0.0;
+    long n_count = 0;
+    for (double v : res.n_samples) {
+        if (std::isfinite(v)) {
+            n_sum += v;
+            ++n_count;
+        }
+    }
+    res.mean_n = n_count > 0 ? n_sum / n_count : std::nan("");
     double n_sq = 0.0;
     for (double v : res.n_samples) {
-        n_sq += (v - res.mean_n) * (v - res.mean_n);
+        if (std::isfinite(v))
+            n_sq += (v - res.mean_n) * (v - res.mean_n);
     }
-    res.std_n = std::sqrt(n_sq / config.trials);
+    res.std_n = n_count > 0 ? std::sqrt(n_sq / n_count) : std::nan("");
 
     std::vector<double> sorted_err = res.errors_Dn;
     std::sort(sorted_err.begin(), sorted_err.end());
@@ -234,8 +232,9 @@ void MonteCarlo::Result::print_summary() const {
         std::printf("Rings            : %zu, rho(ring-ring) = %.4f\n", stages,
                     rho_rings);
     }
-    if (redraws > 0) {
-        std::printf("Redrawn          : %ld (r <= xi)\n", redraws);
+    if (over_coupled > 0) {
+        std::printf("Over-coupled     : %ld (r <= xi, scored, no order)\n",
+                    over_coupled);
     }
     std::printf("============================================\n\n");
 }

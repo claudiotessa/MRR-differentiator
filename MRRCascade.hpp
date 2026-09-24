@@ -70,7 +70,12 @@ class MRRCascade {
     double group_index() const { return n_g; }
     double resonance_offset() const { return df; }
     double self_coupling() const {
-        return stages.empty() ? 0.0 : stages[0].self_coupling();
+        if (stages.empty())
+            return 0.0;
+        double sum = 0.0;
+        for (const MRR &s : stages)
+            sum += s.self_coupling();
+        return sum / stages.size();
     }
 
     // --- Single-stage parameters ---------------------------------------

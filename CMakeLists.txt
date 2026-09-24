@@ -21,5 +21,5 @@ target_link_libraries(MRR PRIVATE
     Python3::NumPy
 )
 
-# Python 3.14 ha deprecato le vecchie funzioni C-API
+# Python 3.14 deprecated the old C-API functions
 target_compile_options(MRR PRIVATE -Wall -Wextra -Wno-deprecated-declarations)

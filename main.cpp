@@ -72,7 +72,7 @@ int main() {
     // =========================================================================
     // 2. DETAILED NOMINAL SIMULATION
     // =========================================================================
-    const double target_n = 0.9;
+    const double target_n = 1.44;
     std::cout << ">>> Nominal simulation for n = " << std::setprecision(2)
               << target_n << " ...\n";
 
@@ -102,7 +102,6 @@ int main() {
     mc_cfg.trials = 500;
     mc_cfg.yield_threshold = fab::paper::D_accept; // the 10% bar of [LIU25]
     mc_cfg.align_waveforms = false;
-    mc_cfg.enforce_under_coupled = true; // Eq. (2) only holds for r > xi
 
     // One geometry error per chip; r, xi, n_eff and n_g all follow from it.
     // Sigmas and sensitivities come from Fabrication.hpp.
