@@ -7,9 +7,6 @@
 #include <stdexcept>
 #include <unsupported/Eigen/FFT>
 
-#include "matplotlibcpp.h"
-
-namespace plt = matplotlibcpp;
 using namespace Eigen;
 
 // =========================================================================
