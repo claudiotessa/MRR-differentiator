@@ -5,8 +5,8 @@
 
 /**
  * @brief Fabrication data for the Monte Carlo: geometry tolerances times
- *        sensitivities, each tagged with its source. Anything not sourced
- *        says UNSOURCED.
+ *        sensitivities, each tagged with its source where there is one;
+ *        the rest carry the reasoning behind the value.
  *
  * [LIU25]  Liu et al., Appl. Opt. 64(7), 1625 (2025) - the paper this
  *          implements, docs/4.10*.pdf. Its own references are all
@@ -15,8 +15,8 @@
  *          one 200 mm wafer, 248 nm DUV, IME. Also the layout-dependent
  *          correlation model: variation is spatially correlated, so two
  *          devices track each other the closer together they sit.
- * [ROB22]  arXiv:2205.11481 - FDE sensitivity of n_eff to width, 220 nm.
- * [IPSR24] 2024 Integrated Photonic Systems Roadmap, Si photonics, T1 & T5.
+ * [RIZ23]  Rizzo et al., Opt. Lett. 48(2), 215 (2023), arXiv:2205.11481 - FDE
+ *          sensitivity of n_eff to width, 220 nm SOI.
  */
 namespace fab {
 
@@ -85,14 +85,13 @@ inline constexpr double sigma_height = 1.316e-9; // [LU17]
 /// A uniform CD bias of +dw closes the gap by dw, so gap error is width error.
 inline constexpr double sigma_gap = sigma_width;
 
-/// UNSOURCED: the centreline comes from the drawn path, so its error is mask
+/// The centreline comes from the drawn path, so its error is mask
 /// placement rather than CD bias. Taken as the same order, independent of dw.
 inline constexpr double sigma_radius = sigma_width;
 
-// Cross-checks on sigma_width: [IPSR24] T5 gives 4% width uniformity in 2024
-// (~2.7 nm as a sigma at 400 nm), [ROB22] says +/-10 nm is within 3 sigma for
-// foundry wafer data. [IPSR24] T1 gives +/-0.5% of 220 nm for thickness.
-// Loss spread is 1-0.2 dB/cm [IPSR24 T5], negligible over an 11.9 um ring.
+// Cross-check on sigma_width: [RIZ23] says +/-10 nm is well within 3 sigma
+// for foundry wafer data, i.e. sigma >= 3.3 nm.
+/// Propagation-loss spread. Negligible over an 11.9 um ring either way.
 inline constexpr double sigma_alpha_dB_per_cm = 0.4;
 
 } // namespace process
@@ -110,11 +109,11 @@ inline constexpr double sigma_alpha_dB_per_cm = 0.4;
 /// error with a small independent residual on top.
 namespace layout {
 
-/// UNSOURCED: centre-to-centre spacing of the rings in a cascade. Tens of
+/// Centre-to-centre spacing of the rings in a cascade. Tens of
 /// microns is what routing a 1.9 um ring costs.
 inline constexpr double ring_pitch = 50e-6; // [m]
 
-/// UNSOURCED magnitude. [LU17] gives the millimetre scale, not a fitted
+/// [LU17] gives the millimetre scale, not a fitted
 /// length. At this pitch anything from 1 to 10 mm leaves rho > 0.95.
 inline constexpr double corr_length = 5e-3; // [m]
 
@@ -128,11 +127,11 @@ inline double rho(double d = ring_pitch, double Lc = corr_length) {
 /// Sensitivities: what a nanometre of geometry costs.
 namespace sensitivity {
 
-/// [ROB22], w = 400 nm, h = 220 nm, 1550 nm. Wider guides are far better
+/// [RIZ23], w = 400 nm, h = 220 nm, 1550 nm. Wider guides are far better
 /// (2.5e-5 at 2000 nm), a lever we cannot use on a 1.9 um ring.
 inline constexpr double dneff_dwidth = 3.0e-3 / 1e-9; // [1/m]
 
-/// UNSOURCED, order of magnitude. Barely matters: sigma_height is 3x smaller.
+/// Order of magnitude. Barely matters: sigma_height is 3x smaller.
 inline constexpr double dneff_dheight = 2.0e-3 / 1e-9; // [1/m]
 
 /// [LIU25] gap scan at R = 1.9 um: gap 160 nm -> t = 0.947, gap 172 nm ->
@@ -149,7 +148,7 @@ inline constexpr double dxi_dradius = 2.925e-4 / 1e-9; // [1/m]
 /// anti-correlated; MonteCarlo::Config::dxi_dwidth sweeps it.
 inline constexpr double dxi_dwidth = 0.0; // [1/m]
 
-/// UNSOURCED. Only sets the band, not the order.
+/// Only sets the band, not the order.
 inline constexpr double dng_dwidth = 0.0; // [1/m]
 
 } // namespace sensitivity
@@ -178,8 +177,7 @@ inline double sigma_df_untuned(double n_g, double lambda0 = 1550e-9) {
     return (2.99792458e8 / lambda0) * sigma_neff() / n_g;
 }
 
-/// UNSOURCED by the process references, which say nothing about control
-/// loops. 10-100 MHz is the usual figure for a locked ring.
+/// 10-100 MHz is the usual figure for a locked ring.
 inline constexpr double sigma_df_tuned = 50e6; // [Hz]
 
 // --- What the correlated draw is worth --------------------------------

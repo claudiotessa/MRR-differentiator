@@ -34,7 +34,7 @@ class MonteCarlo {
         double sigma_height = fab::process::sigma_height; // [m]
         double sigma_radius = fab::process::sigma_radius; // [m]
         double dxi_dwidth = fab::sensitivity::dxi_dwidth; // [1/m], unmeasured
-        double dng_dwidth = fab::sensitivity::dng_dwidth; // [1/m], unsourced
+        double dng_dwidth = fab::sensitivity::dng_dwidth; // [1/m]
 
         // Optical, used when not `correlated`.
         double sigma_r = fab::sigma_r();

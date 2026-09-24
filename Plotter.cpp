@@ -66,6 +66,8 @@ Eigen::ArrayXd Plotter::to_dB(const Eigen::ArrayXd &mag,
 
 void Plotter::show() { plt::show(); }
 
+void Plotter::headless() { plt::backend("Agg"); }
+
 // =========================================================================
 // FIGURE FILES
 // =========================================================================
@@ -89,11 +91,7 @@ void Plotter::save(const std::string &stem) {
 // TIME-DOMAIN FIGURES
 // =========================================================================
 
-void Plotter::plot_time_domain(const Simulation::Propagation &p) {
-    plt::figure_size(950, 900);
-
-    // Subplot 1: the launched pulse.
-    plt::subplot(3, 1, 1);
+void Plotter::panel_input(const Simulation::Propagation &p) {
     plt::plot(
         to_std_vec(p.time_ps), to_std_vec(p.in_norm),
         {{"color", "black"}, {"linewidth", "2"}, {"label", p.input_label}});
@@ -101,9 +99,9 @@ void Plotter::plot_time_domain(const Simulation::Propagation &p) {
         plt::xlim(-p.view_ps, p.view_ps);
     }
     finish_axes("Time [ps]", "Input y(t) [norm.]");
+}
 
-    // Subplot 2: ideal derivative against the ring output, field.
-    plt::subplot(3, 1, 2);
+void Plotter::panel_field(const Simulation::Propagation &p) {
     plt::title(p.caption);
     plt::plot(to_std_vec(p.time_ps), to_std_vec(p.diff_real_norm),
               {{"color", "black"},
@@ -121,9 +119,10 @@ void Plotter::plot_time_domain(const Simulation::Propagation &p) {
         plt::xlim(-p.view_ps, p.view_ps);
     }
     finish_axes("Time [ps]", "Derivative y'(t) [norm.]");
+}
 
-    // Subplot 3: optical power, which is what D_n is measured on.
-    plt::subplot(3, 1, 3);
+// Optical power, which is what D_n is measured on.
+void Plotter::panel_power(const Simulation::Propagation &p) {
     plt::plot(to_std_vec(p.time_ps), to_std_vec(p.power_diff),
               {{"color", "black"},
                {"linewidth", "2"},
@@ -136,7 +135,32 @@ void Plotter::plot_time_domain(const Simulation::Propagation &p) {
         plt::xlim(-p.view_ps, p.view_ps);
     }
     finish_axes("Time [ps]", "Power |y'(t)|^2 [norm.]");
+}
 
+void Plotter::plot_time_domain(const Simulation::Propagation &p) {
+    plt::figure_size(950, 900);
+    plt::subplot(3, 1, 1);
+    panel_input(p);
+    plt::subplot(3, 1, 2);
+    panel_field(p);
+    plt::subplot(3, 1, 3);
+    panel_power(p);
+    plt::tight_layout();
+}
+
+void Plotter::plot_time_fields(const Simulation::Propagation &p) {
+    plt::figure_size(950, 650);
+    plt::subplot(2, 1, 1);
+    panel_input(p);
+    plt::subplot(2, 1, 2);
+    panel_field(p);
+    plt::tight_layout();
+}
+
+void Plotter::plot_time_power(const Simulation::Propagation &p) {
+    plt::figure_size(950, 450);
+    plt::title(p.caption);
+    panel_power(p);
     plt::tight_layout();
 }
 
@@ -235,7 +259,8 @@ void Plotter::plot_all(const Simulation &sim, bool show_immediately) {
 void Plotter::plot_monte_carlo(const MonteCarlo::Result &res,
                                double threshold) {
     plt::figure_size(850, 480);
-    plt::hist(res.errors_Dn, 40, "steelblue", 0.75, true);
+    // The fifth argument of hist() is `cumulative`, not `density`.
+    plt::hist(res.errors_Dn, 40, "steelblue", 0.75, false);
 
     char thr_label[64];
     std::snprintf(thr_label, sizeof(thr_label), "yield threshold (%.0f%%)",
@@ -261,6 +286,241 @@ void Plotter::plot_monte_carlo(const MonteCarlo::Result &res,
                   " (yield = %.1f%%)",
                   res.errors_Dn.size(), res.yield_rate);
     plt::title(std::string(title));
-    finish_axes("Differentiation error D_n [%]", "Probability density");
+    finish_axes("Differentiation error D_n [%]", "Devices");
+    plt::tight_layout();
+}
+
+// =========================================================================
+// PRESENTATION FIGURES
+// =========================================================================
+
+void Plotter::draw_iso_orders(const std::vector<double> &orders, double n_bold,
+                              double xi_lo, double xi_hi) {
+    // semilogy takes no keywords, so it only switches the axes to log; the
+    // curves go through plot(), which keeps the scale.
+    plt::semilogy(std::vector<double>{xi_lo}, std::vector<double>{1e-3}, "");
+
+    const int M = 200;
+    for (double n : orders) {
+        std::vector<double> xs, ys;
+        for (int k = 0; k < M; ++k) {
+            const double x = xi_lo + (xi_hi - xi_lo) * k / (M - 1);
+            // R, n_eff and n_g do not enter r, only Eq. (2) does.
+            const double r =
+                MRR::fractional_order(n, 1e-6, x, 1.0, 1.0).self_coupling();
+            xs.push_back(x);
+            ys.push_back(r - x);
+        }
+        const bool bold = std::abs(n - n_bold) < 1e-9;
+        char label[32];
+        std::snprintf(label, sizeof(label), "n = %.2g", n);
+        if (bold) {
+            plt::plot(xs, ys,
+                      {{"color", "blue"}, {"linewidth", "3"}, {"label", label}});
+        } else {
+            plt::plot(xs, ys, {{"color", "gray"}, {"linewidth", "1"}});
+            plt::text(xs.back(), ys.back(), std::string(" ") + label);
+        }
+    }
+}
+
+void Plotter::plot_locus_map(const std::vector<double> &orders, double n_bold,
+                             double r_design, double xi_design) {
+    plt::figure_size(900, 600);
+    draw_iso_orders(orders, n_bold, 0.80, 0.995);
+    plt::plot(std::vector<double>{xi_design},
+              std::vector<double>{r_design - xi_design},
+              {{"color", "red"},
+               {"marker", "*"},
+               {"markersize", "16"},
+               {"linestyle", "none"},
+               {"label", "design point [LIU25]"}});
+    plt::xlim(0.80, 1.0);
+    plt::title("Iso-order curves of Eq. (2), under-coupled branch r > xi");
+    finish_axes("Single-pass transmission xi", "r - xi");
+    plt::tight_layout();
+}
+
+void Plotter::plot_dn_along_locus(const std::vector<double> &r,
+                                  const std::vector<double> &D_fixed,
+                                  const std::vector<double> &D_scaled, double n,
+                                  double r_design) {
+    plt::figure_size(900, 520);
+    plt::plot(r, D_fixed,
+              {{"color", "red"},
+               {"linewidth", "2.5"},
+               {"marker", "o"},
+               {"markersize", "4"},
+               {"label", "fixed 3 ps pulse"}});
+    plt::plot(r, D_scaled,
+              {{"color", "blue"},
+               {"linestyle", "--"},
+               {"linewidth", "2"},
+               {"label", "pulse scaled with the FWHM"}});
+    plt::axvline(r_design, 0.0, 1.0,
+                 {{"color", "gray"},
+                  {"linestyle", ":"},
+                  {"linewidth", "2"},
+                  {"label", "design point [LIU25]"}});
+    char title[96];
+    std::snprintf(title, sizeof(title), "D_n along the n = %.2f locus", n);
+    plt::title(title);
+    finish_axes("Self-coupling r", "D_n [%]");
+    plt::tight_layout();
+}
+
+void Plotter::plot_dn_vs_order(const std::vector<double> &n,
+                               const std::vector<double> &D, double T0_ps,
+                               const std::vector<double> &bench_n,
+                               const std::vector<double> &bench_ours,
+                               const std::vector<double> &bench_paper,
+                               double threshold) {
+    plt::figure_size(900, 520);
+    char label[64];
+    std::snprintf(label, sizeof(label), "ours, %.0f ps pulse", T0_ps);
+    plt::plot(n, D, {{"color", "red"}, {"linewidth", "2.5"}, {"label", label}});
+    plt::plot(bench_n, bench_ours,
+              {{"color", "red"},
+               {"marker", "o"},
+               {"markersize", "9"},
+               {"linestyle", "none"},
+               {"label", "ours, paper's pulse"}});
+    plt::plot(bench_n, bench_paper,
+              {{"color", "black"},
+               {"marker", "s"},
+               {"markersize", "9"},
+               {"linestyle", "none"},
+               {"label", "[LIU25] reported"}});
+    std::snprintf(label, sizeof(label), "%.0f%% bar", threshold);
+    plt::axhline(threshold, 0.0, 1.0,
+                 {{"color", "gray"}, {"linestyle", "--"}, {"label", label}});
+    // A ring is added at every integer order.
+    for (double k : {1.0, 2.0})
+        plt::axvline(k, 0.0, 1.0, {{"color", "gray"}, {"linestyle", ":"}});
+    plt::title("D_n against the order, uniform cascade of ceil(n) rings");
+    finish_axes("Order n", "D_n [%]");
+    plt::tight_layout();
+}
+
+void Plotter::plot_mc_scatter(const MonteCarlo::Result &res, double n,
+                              double r_design, double xi_design,
+                              double threshold) {
+    std::vector<double> xp, yp, xf, yf;
+    long off_axis = 0; // r <= xi has no place on a log axis
+    for (size_t i = 0; i < res.errors_Dn.size(); ++i) {
+        const double d = res.r_samples[i] - res.xi_samples[i];
+        if (!(d > 0.0)) {
+            ++off_axis;
+            continue;
+        }
+        const bool pass = res.errors_Dn[i] <= threshold;
+        (pass ? xp : xf).push_back(res.xi_samples[i]);
+        (pass ? yp : yf).push_back(d);
+    }
+
+    // Frame the cloud, not the whole map.
+    double lo = xi_design, hi = xi_design;
+    for (double x : res.xi_samples) {
+        lo = std::min(lo, x);
+        hi = std::max(hi, x);
+    }
+    const double pad = 0.2 * (hi - lo);
+    lo -= pad;
+    hi += pad;
+
+    plt::figure_size(900, 600);
+    std::vector<double> orders;
+    for (double k = n - 0.2; k <= n + 0.201; k += 0.1)
+        if (k > 0.0 && k < 1.0)
+            orders.push_back(k);
+    draw_iso_orders(orders, n, lo, hi);
+
+    char label[64];
+    std::snprintf(label, sizeof(label), "D_n <= %.0f%% (%zu)", threshold,
+                  xp.size());
+    plt::scatter(xp, yp, 12.0, {{"color", "green"}, {"label", label}});
+    std::snprintf(label, sizeof(label), "D_n > %.0f%% (%zu)", threshold,
+                  xf.size());
+    plt::scatter(xf, yf, 12.0, {{"color", "red"}, {"label", label}});
+    plt::plot(std::vector<double>{xi_design},
+              std::vector<double>{r_design - xi_design},
+              {{"color", "black"},
+               {"marker", "*"},
+               {"markersize", "16"},
+               {"linestyle", "none"},
+               {"label", "design point"}});
+    plt::xlim(lo, hi);
+
+    char title[128];
+    std::snprintf(title, sizeof(title),
+                  "Monte Carlo devices, yield %.1f%% (%ld over-coupled, not "
+                  "shown)",
+                  res.yield_rate, off_axis);
+    plt::title(title);
+    finish_axes("Single-pass transmission xi", "r - xi");
+    plt::tight_layout();
+}
+
+void Plotter::plot_yield_along_locus(const std::vector<double> &r,
+                                     const std::vector<double> &D_nominal,
+                                     const std::vector<double> &yield,
+                                     double n, double r_design,
+                                     double threshold) {
+    plt::figure_size(900, 650);
+
+    plt::subplot(2, 1, 1);
+    char title[96];
+    std::snprintf(title, sizeof(title), "Along the n = %.2f locus", n);
+    plt::title(title);
+    plt::plot(r, D_nominal,
+              {{"color", "red"},
+               {"marker", "o"},
+               {"linewidth", "2"},
+               {"label", "nominal D_n"}});
+    char label[32];
+    std::snprintf(label, sizeof(label), "%.0f%% bar", threshold);
+    plt::axhline(threshold, 0.0, 1.0,
+                 {{"color", "gray"}, {"linestyle", "--"}, {"label", label}});
+    plt::axvline(r_design, 0.0, 1.0, {{"color", "gray"}, {"linestyle", ":"}});
+    finish_axes("Self-coupling r", "D_n [%]");
+
+    plt::subplot(2, 1, 2);
+    plt::plot(r, yield,
+              {{"color", "blue"},
+               {"marker", "o"},
+               {"linewidth", "2"},
+               {"label", "Monte Carlo yield"}});
+    plt::axvline(r_design, 0.0, 1.0,
+                 {{"color", "gray"},
+                  {"linestyle", ":"},
+                  {"label", "design point [LIU25]"}});
+    plt::ylim(0.0, 100.0);
+    finish_axes("Self-coupling r", "Yield [%]");
+    plt::tight_layout();
+}
+
+void Plotter::plot_tolerance_breakdown(const std::vector<std::string> &labels,
+                                       const std::vector<double> &yield,
+                                       double threshold) {
+    std::vector<double> x(yield.size());
+    for (size_t i = 0; i < x.size(); ++i)
+        x[i] = static_cast<double>(i);
+
+    plt::figure_size(900, 480);
+    plt::bar(x, yield, "black", "-", 1.0, {{"color", "steelblue"}});
+    plt::xticks(x, labels);
+    for (size_t i = 0; i < x.size(); ++i) {
+        char v[16];
+        std::snprintf(v, sizeof(v), "%.1f%%", yield[i]);
+        plt::text(x[i] - 0.2, yield[i] + 1.5, v);
+    }
+    plt::ylim(0.0, 110.0);
+    char title[96];
+    std::snprintf(title, sizeof(title),
+                  "Yield (D_n <= %.0f%%) with one tolerance at a time",
+                  threshold);
+    plt::title(title);
+    plt::ylabel("Yield [%]");
+    plt::grid(true);
     plt::tight_layout();
 }

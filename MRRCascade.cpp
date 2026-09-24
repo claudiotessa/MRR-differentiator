@@ -15,7 +15,8 @@ MRRCascade::MRRCascade(double n, double R, double xi, double n_eff, double n_g,
     }
 
     // Rings needed: N = ceil(n), each carrying an equal share of the order.
-    int N = static_cast<int>(std::ceil(n));
+    // The tolerance keeps a computed 1.0000000000000002 at one ring.
+    int N = static_cast<int>(std::ceil(n - 1e-9));
     double n_sub = n / static_cast<double>(N);
 
     stages.reserve(N);
