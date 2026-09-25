@@ -148,17 +148,11 @@ void Plotter::plot_time_domain(const Simulation::Propagation &p) {
     plt::tight_layout();
 }
 
-void Plotter::plot_time_fields(const Simulation::Propagation &p) {
+void Plotter::plot_time_power(const Simulation::Propagation &p) {
     plt::figure_size(950, 650);
     plt::subplot(2, 1, 1);
     panel_input(p);
     plt::subplot(2, 1, 2);
-    panel_field(p);
-    plt::tight_layout();
-}
-
-void Plotter::plot_time_power(const Simulation::Propagation &p) {
-    plt::figure_size(950, 450);
     plt::title(p.caption);
     panel_power(p);
     plt::tight_layout();
@@ -336,7 +330,7 @@ void Plotter::plot_locus_map(const std::vector<double> &orders, double n_bold,
                {"linestyle", "none"},
                {"label", "design point [LIU25]"}});
     plt::xlim(0.80, 1.0);
-    plt::title("Iso-order curves of Eq. (2), under-coupled branch r > xi");
+    plt::title("Same-order curves of Eq. (2), under-coupled branch r > xi");
     finish_axes("Single-pass transmission xi", "r - xi");
     plt::tight_layout();
 }
@@ -363,7 +357,7 @@ void Plotter::plot_dn_along_locus(const std::vector<double> &r,
                   {"linewidth", "2"},
                   {"label", "design point [LIU25]"}});
     char title[96];
-    std::snprintf(title, sizeof(title), "D_n along the n = %.2f locus", n);
+    std::snprintf(title, sizeof(title), "D_n along the n = %.2f design curve", n);
     plt::title(title);
     finish_axes("Self-coupling r", "D_n [%]");
     plt::tight_layout();
@@ -385,12 +379,6 @@ void Plotter::plot_dn_vs_order(const std::vector<double> &n,
                {"markersize", "9"},
                {"linestyle", "none"},
                {"label", "ours, paper's pulse"}});
-    plt::plot(bench_n, bench_paper,
-              {{"color", "black"},
-               {"marker", "s"},
-               {"markersize", "9"},
-               {"linestyle", "none"},
-               {"label", "[LIU25] reported"}});
     std::snprintf(label, sizeof(label), "%.0f%% bar", threshold);
     plt::axhline(threshold, 0.0, 1.0,
                  {{"color", "gray"}, {"linestyle", "--"}, {"label", label}});
@@ -405,8 +393,12 @@ void Plotter::plot_dn_vs_order(const std::vector<double> &n,
 void Plotter::plot_mc_scatter(const MonteCarlo::Result &res, double n,
                               double r_design, double xi_design,
                               double threshold) {
+    // The plane is one ring's: a cascade is placed by its per-ring order,
+    // and each device by its ring-averaged r and xi.
+    const double n_ring = n / std::ceil(n - 1e-9);
+
     std::vector<double> xp, yp, xf, yf;
-    long off_axis = 0; // r <= xi has no place on a log axis
+    long off_axis = 0; // mean r <= mean xi has no place on a log axis
     for (size_t i = 0; i < res.errors_Dn.size(); ++i) {
         const double d = res.r_samples[i] - res.xi_samples[i];
         if (!(d > 0.0)) {
@@ -430,10 +422,10 @@ void Plotter::plot_mc_scatter(const MonteCarlo::Result &res, double n,
 
     plt::figure_size(900, 600);
     std::vector<double> orders;
-    for (double k = n - 0.2; k <= n + 0.201; k += 0.1)
-        if (k > 0.0 && k < 1.0)
-            orders.push_back(k);
-    draw_iso_orders(orders, n, lo, hi);
+    for (int k = -2; k <= 2; ++k)
+        if (n_ring + 0.1 * k > 0.0 && n_ring + 0.1 * k < 1.0)
+            orders.push_back(n_ring + 0.1 * k);
+    draw_iso_orders(orders, n_ring, lo, hi);
 
     char label[64];
     std::snprintf(label, sizeof(label), "D_n <= %.0f%% (%zu)", threshold,
@@ -451,11 +443,13 @@ void Plotter::plot_mc_scatter(const MonteCarlo::Result &res, double n,
                {"label", "design point"}});
     plt::xlim(lo, hi);
 
-    char title[128];
+    // Over-coupled counts devices with any ring at r <= xi; off_axis only
+    // those whose average is, so the two can differ for a cascade.
+    char title[160];
     std::snprintf(title, sizeof(title),
-                  "Monte Carlo devices, yield %.1f%% (%ld over-coupled, not "
-                  "shown)",
-                  res.yield_rate, off_axis);
+                  "Monte Carlo devices, n = %.2f (%.2f per ring), yield %.1f%%\n"
+                  "%ld over-coupled, %ld off-axis (mean r <= mean xi)",
+                  n, n_ring, res.yield_rate, res.over_coupled, off_axis);
     plt::title(title);
     finish_axes("Single-pass transmission xi", "r - xi");
     plt::tight_layout();
@@ -470,7 +464,7 @@ void Plotter::plot_yield_along_locus(const std::vector<double> &r,
 
     plt::subplot(2, 1, 1);
     char title[96];
-    std::snprintf(title, sizeof(title), "Along the n = %.2f locus", n);
+    std::snprintf(title, sizeof(title), "Along the n = %.2f design curve", n);
     plt::title(title);
     plt::plot(r, D_nominal,
               {{"color", "red"},

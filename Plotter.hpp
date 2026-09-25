@@ -15,9 +15,8 @@ class Plotter {
 
     /// Input, field and power in one figure.
     static void plot_time_domain(const Simulation::Propagation &p);
-    /// Input and field only, the first two panels of plot_time_domain().
-    static void plot_time_fields(const Simulation::Propagation &p);
-    /// Power only, the traces Eq. (3) integrates.
+    /// Input and power, without the field panel: the power pair is what
+    /// Eq. (3) integrates.
     static void plot_time_power(const Simulation::Propagation &p);
     /// Magnitude and phase against the ideal |2*pi*f|^n, over three usable
     /// bands either side of the resonance.

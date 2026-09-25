@@ -80,12 +80,10 @@ int main(int argc, char **argv) {
 
     {
         Simulation sim(design);
-        // Aligned: the power figure shows the pair D_n integrates.
+        // Aligned: the power panel shows the pair D_n integrates.
         const auto &p = sim.run(pulse, true, false);
-        Plotter::plot_time_fields(p);
-        Plotter::save("time-n054");
         Plotter::plot_time_power(p);
-        Plotter::save("power-n054");
+        Plotter::save("time-n054");
     }
 
     // --- Reproduction of [LIU25] -------------------------------------
@@ -162,7 +160,7 @@ int main(int argc, char **argv) {
         Plotter::save("mc-breakdown");
     }
 
-    std::printf(">>> Yield along the locus\n");
+    std::printf(">>> Yield along the design curve\n");
     {
         // The same tolerances at every point: a different xi is a different
         // radius or process, whose sensitivities we do not have.
